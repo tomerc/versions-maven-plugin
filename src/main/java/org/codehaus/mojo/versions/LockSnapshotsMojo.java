@@ -23,6 +23,7 @@ import org.apache.maven.artifact.Artifact;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
+import org.apache.maven.project.MavenProject;
 import org.codehaus.mojo.versions.api.PomHelper;
 import org.codehaus.mojo.versions.rewriting.ModifiedPomXMLEventReader;
 
@@ -33,10 +34,10 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Attempts to resolve unlocked snapshot dependency versions to the locked timestamp versions used in the build.
- * For example, an unlocked snapshot version like "1.0-SNAPSHOT" could be resolved to "1.0-20090128.202731-1".
- * If a timestamped snapshot is not available, then the version will remained unchanged.  This would be the case
- * if the dependency is only available in the local repository and not in a remote snapshot repository.
+ * Attempts to resolve unlocked snapshot dependency versions to the locked timestamp versions used in the build. For
+ * example, an unlocked snapshot version like "1.0-SNAPSHOT" could be resolved to "1.0-20090128.202731-1". If a
+ * timestamped snapshot is not available, then the version will remained unchanged. This would be the case if the
+ * dependency is only available in the local repository and not in a remote snapshot repository.
  *
  * @author Paul Gier
  * @goal lock-snapshots
@@ -60,8 +61,8 @@ public class LockSnapshotsMojo
     /**
      * @param pom the pom to update.
      * @throws MojoExecutionException when things go wrong
-     * @throws MojoFailureException   when things go wrong in a very bad way
-     * @throws XMLStreamException     when things go wrong with XML streaming
+     * @throws MojoFailureException when things go wrong in a very bad way
+     * @throws XMLStreamException when things go wrong with XML streaming
      * @see AbstractVersionsUpdaterMojo#update(ModifiedPomXMLEventReader)
      */
     protected void update( ModifiedPomXMLEventReader pom )
@@ -74,6 +75,10 @@ public class LockSnapshotsMojo
         if ( isProcessingDependencies() )
         {
             lockSnapshots( pom, getProject().getDependencies() );
+        }
+        if ( isProcessingParent() )
+        {
+            lockParentSnapshot( pom, getProject().getParent() );
         }
     }
 
@@ -114,6 +119,64 @@ public class LockSnapshotsMojo
         }
     }
 
+    private void lockParentSnapshot( ModifiedPomXMLEventReader pom, MavenProject parent )
+        throws XMLStreamException, MojoExecutionException
+    {
+        if ( parent == null )
+        {
+            getLog().info( "Project does not have a parent" );
+            return;
+        }
+
+        if ( reactorProjects.contains( parent ) )
+        {
+            getLog().info( "Project's parent is part of the reactor" );
+            return;
+        }
+
+        Artifact parentArtifact = parent.getArtifact();
+        String parentVersion = parentArtifact.getVersion();
+
+        Matcher versionMatcher = matchSnapshotRegex.matcher( parentVersion );
+        if ( versionMatcher.find() && versionMatcher.end() == parentVersion.length() )
+        {
+            String lockedParentVersion = resolveSnapshotVersion( parentArtifact );
+            if ( !parentVersion.equals( lockedParentVersion ) )
+            {
+                if ( PomHelper.setProjectParentVersion( pom, lockedParentVersion ) )
+                {
+                    getLog().info( "Locked parent " + parentArtifact.toString() + " to version "
+                        + lockedParentVersion );
+                }
+            }
+        }
+    }
+
+    /**
+     * Determine the timestamp version of the snapshot artifact used in the build.
+     *
+     * @param artifact
+     * @return The timestamp version if exists, otherwise the original snapshot artifact version is returned.
+     */
+    private String resolveSnapshotVersion( Artifact artifact )
+    {
+        getLog().debug( "Resolving snapshot version for artifact: " + artifact );
+
+        String lockedVersion = artifact.getVersion();
+
+        try
+        {
+            resolver.resolve( artifact, getProject().getRemoteArtifactRepositories(), localRepository );
+
+            lockedVersion = artifact.getVersion();
+        }
+        catch ( Exception e )
+        {
+            getLog().error( e );
+        }
+        return lockedVersion;
+    }
+
     /**
      * Determine the timestamp version of the snapshot dependency used in the build.
      *
@@ -126,9 +189,8 @@ public class LockSnapshotsMojo
 
         String lockedVersion = dep.getVersion();
 
-        Artifact depArtifact =
-            artifactFactory.createArtifact( dep.getGroupId(), dep.getArtifactId(), dep.getVersion(), dep.getScope(),
-                                            dep.getType() );
+        Artifact depArtifact = artifactFactory.createArtifact( dep.getGroupId(), dep.getArtifactId(), dep.getVersion(),
+                                                               dep.getScope(), dep.getType() );
         try
         {
             resolver.resolve( depArtifact, getProject().getRemoteArtifactRepositories(), localRepository );
