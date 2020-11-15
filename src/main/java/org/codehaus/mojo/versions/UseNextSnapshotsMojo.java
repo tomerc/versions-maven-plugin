@@ -26,6 +26,8 @@ import org.apache.maven.artifact.versioning.DefaultArtifactVersion;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
+import org.apache.maven.plugins.annotations.Mojo;
+import org.apache.maven.plugins.annotations.Parameter;
 import org.codehaus.mojo.versions.api.ArtifactVersions;
 import org.codehaus.mojo.versions.api.PomHelper;
 import org.codehaus.mojo.versions.ordering.VersionComparator;
@@ -42,11 +44,9 @@ import java.util.regex.Pattern;
  * Replaces any release versions with the next snapshot version (if it has been deployed).
  *
  * @author Stephen Connolly
- * @goal use-next-snapshots
- * @requiresProject true
- * @requiresDirectInvocation true
  * @since 1.0-beta-1
  */
+@Mojo( name = "use-next-snapshots", requiresProject = true, requiresDirectInvocation = true, threadSafe = true )
 public class UseNextSnapshotsMojo
     extends AbstractVersionsDependencyUpdaterMojo
 {
@@ -54,26 +54,26 @@ public class UseNextSnapshotsMojo
     /**
      * Whether to allow the major version number to be changed.
      *
-     * @parameter property="allowMajorUpdates" default-value="false"
      * @since 1.0-beta-1
      */
-    protected Boolean allowMajorUpdates;
+    @Parameter( property = "allowMajorUpdates", defaultValue = "false" )
+    private boolean allowMajorUpdates;
 
     /**
      * Whether to allow the minor version number to be changed.
      *
-     * @parameter property="allowMinorUpdates" default-value="false"
      * @since 1.0-beta-1
      */
-    protected Boolean allowMinorUpdates;
+    @Parameter( property = "allowMinorUpdates", defaultValue = "false" )
+    private boolean allowMinorUpdates;
 
     /**
      * Whether to allow the incremental version number to be changed.
      *
-     * @parameter property="allowIncrementalUpdates" default-value="true"
      * @since 1.0-beta-1
      */
-    protected Boolean allowIncrementalUpdates;
+    @Parameter( property = "allowIncrementalUpdates", defaultValue = "true" )
+    private boolean allowIncrementalUpdates;
 
     // ------------------------------ FIELDS ------------------------------
 
@@ -100,7 +100,7 @@ public class UseNextSnapshotsMojo
             {
                 useNextSnapshots( pom, getProject().getDependencyManagement().getDependencies() );
             }
-            if ( isProcessingDependencies() )
+            if ( getProject().getDependencies() != null && isProcessingDependencies() )
             {
                 useNextSnapshots( pom, getProject().getDependencies() );
             }
@@ -111,20 +111,22 @@ public class UseNextSnapshotsMojo
         }
     }
 
-    private void useNextSnapshots( ModifiedPomXMLEventReader pom, Collection dependencies )
+    private void useNextSnapshots( ModifiedPomXMLEventReader pom, Collection<Dependency> dependencies )
         throws XMLStreamException, MojoExecutionException, ArtifactMetadataRetrievalException
     {
         int segment = determineUnchangedSegment( allowMajorUpdates, allowMinorUpdates, allowIncrementalUpdates );
 
-        Iterator i = dependencies.iterator();
-
-        while ( i.hasNext() )
+        for ( Dependency dep : dependencies )
         {
-            Dependency dep = (Dependency) i.next();
-
             if ( isExcludeReactor() && isProducedByReactor( dep ) )
             {
                 getLog().info( "Ignoring reactor dependency: " + toString( dep ) );
+                continue;
+            }
+
+            if ( isHandledByProperty( dep ) )
+            {
+                getLog().debug( "Ignoring dependency with property as version: " + toString( dep ) );
                 continue;
             }
 
@@ -148,8 +150,8 @@ public class UseNextSnapshotsMojo
                     continue;
                 }
                 ArtifactVersion upperBound =
-                    segment >= 0 ? versionComparator.incrementSegment( lowerBound, segment ) : null;
-                getLog().info( "Upper bound: " + ( upperBound == null ? "none" : upperBound.toString() ) );
+                    segment >= 0 ? versionComparator.incrementSegment(lowerBound, segment) : null;
+                getLog().info( "Upper bound: " + (upperBound == null ? "none" : upperBound.toString() ) );
                 ArtifactVersion[] newer = versions.getVersions( lowerBound, upperBound, true, false, false );
                 getLog().debug( "Candidate versions " + Arrays.asList( newer ) );
                 for ( int j = 0; j < newer.length; j++ )
@@ -158,7 +160,7 @@ public class UseNextSnapshotsMojo
                     if ( matchSnapshotRegex.matcher( newVersion ).matches() )
                     {
                         if ( PomHelper.setDependencyVersion( pom, dep.getGroupId(), dep.getArtifactId(), version,
-                                                             newVersion ) )
+                                                             newVersion, getProject().getModel() ) )
                         {
                             getLog().info( "Updated " + toString( dep ) + " to version " + newVersion );
                         }

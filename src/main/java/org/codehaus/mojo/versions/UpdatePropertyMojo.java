@@ -21,6 +21,8 @@ package org.codehaus.mojo.versions;
 
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
+import org.apache.maven.plugins.annotations.Mojo;
+import org.apache.maven.plugins.annotations.Parameter;
 import org.codehaus.mojo.versions.api.PropertyVersions;
 import org.codehaus.mojo.versions.rewriting.ModifiedPomXMLEventReader;
 
@@ -31,11 +33,9 @@ import java.util.Map;
  * Sets a property to the latest version in a given range of associated artifacts.
  *
  * @author Eric Pabst
- * @goal update-property
- * @requiresProject true
- * @requiresDirectInvocation true
  * @since 1.3
  */
+@Mojo( name = "update-property", requiresProject = true, requiresDirectInvocation = true, threadSafe = true )
 public class UpdatePropertyMojo
     extends AbstractVersionsUpdaterMojo
 {
@@ -44,27 +44,72 @@ public class UpdatePropertyMojo
 
     /**
      * A property to update.
-     *
-     * @parameter property="property"
+     * 
      * @since 1.3
      */
+    @Parameter( property = "property" )
     private String property = null;
 
     /**
      * The new version to set the property to (can be a version range to find a version within).
-     *
-     * @parameter property="newVersion"
+     * <ul>
+     * <li><code>1.0</code>x >= 1.0. The default Maven meaning for 1.0 is everything (,) but with 1.0 recommended.</li>
+     * <li><code>[1.0,2.0)</code> Versions 1.0 (included) to 2.0 (not included)</li>
+     * <li><code>[1.0,2.0]</code> Versions 1.0 to 2.0 (both included)</li>
+     * <li><code>[1.5,)</code> Versions 1.5 and higher</li>
+     * <li><code>(,1.0],[1.2,)</code> Versions up to 1.0 (included) and 1.2 or higher</li>
+     * </ul>
+     * If you like to define the version to be used exactly you have to use it like this:
+     * <code>-DnewVersion=[19.0]</code> otherwise a newer existing version will be used. If you need to downgrade a
+     * version you have to define <code>-DallowDowngrade=true</code> as well otherwise
+     * the version will be kept.
+     * 
      * @since 1.3
      */
+    @Parameter( property = "newVersion" )
     private String newVersion = null;
 
     /**
      * Whether properties linking versions should be auto-detected or not.
      *
-     * @parameter property="autoLinkItems" defaultValue="true"
      * @since 1.0-alpha-2
      */
-    private Boolean autoLinkItems;
+    @Parameter( property = "autoLinkItems", defaultValue = "true" )
+    private boolean autoLinkItems;
+
+    /**
+     * If a property points to a version like <code>1.2.3</code> and your repository contains versions like
+     * <code>1.2.3</code> and <code>1.1.0</code> without settings this to <code>true</code> the property will never
+     * being changed back to <code>1.1.0</code> by using <code>-DnewVersion=[1.1.0]</code>.
+     * 
+     * @since 3.0.0
+     */
+    @Parameter( property = "allowDowngrade", defaultValue = "false" )
+    private boolean allowDowngrade;
+
+    /**
+     * Whether to allow the major version number to be changed.
+     *
+     * @since 2.4
+     */
+    @Parameter( property = "allowMajorUpdates", defaultValue = "true" )
+    protected boolean allowMajorUpdates;
+
+    /**
+     * Whether to allow the minor version number to be changed.
+     *
+     * @since 2.4
+     */
+    @Parameter( property = "allowMinorUpdates", defaultValue = "true" )
+    protected boolean allowMinorUpdates;
+
+    /**
+     * Whether to allow the incremental version number to be changed.
+     *
+     * @since 2.4
+     */
+    @Parameter( property = "allowIncrementalUpdates", defaultValue = "true" )
+    protected boolean allowIncrementalUpdates;
 
     // -------------------------- STATIC METHODS --------------------------
 
@@ -85,7 +130,7 @@ public class UpdatePropertyMojo
         propertyConfig.setVersion( newVersion );
         Map<Property, PropertyVersions> propertyVersions =
             this.getHelper().getVersionPropertiesMap( getProject(), new Property[] { propertyConfig }, property, "",
-                                                      !Boolean.FALSE.equals( autoLinkItems ) );
+                                                      autoLinkItems );
         for ( Map.Entry<Property, PropertyVersions> entry : propertyVersions.entrySet() )
         {
             Property property = entry.getKey();
@@ -97,7 +142,8 @@ public class UpdatePropertyMojo
                 continue;
             }
 
-            updatePropertyToNewestVersion( pom, property, version, currentVersion );
+            int segment = determineUnchangedSegment( allowMajorUpdates, allowMinorUpdates, allowIncrementalUpdates );
+            updatePropertyToNewestVersion( pom, property, version, currentVersion, allowDowngrade, segment );
 
         }
     }

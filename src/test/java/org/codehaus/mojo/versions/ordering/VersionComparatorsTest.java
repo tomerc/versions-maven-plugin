@@ -19,12 +19,13 @@ package org.codehaus.mojo.versions.ordering;
  * under the License.
  */
 
-import junit.framework.TestCase;
 import org.apache.maven.artifact.versioning.DefaultArtifactVersion;
 import org.apache.maven.artifact.versioning.ArtifactVersion;
+import org.junit.Test;
+
+import static org.junit.Assert.assertTrue;
 
 public class VersionComparatorsTest
-    extends TestCase
 {
     private final String[] versionDataset = {
         "1",
@@ -36,12 +37,17 @@ public class VersionComparatorsTest
         "1-alpha-1",
     };
 
+    @Test
     public void testMavenVersionComparator() {
         assertVersions( new MavenVersionComparator() );
     }
+
+    @Test
     public void testMercuryVersionComparator() {
         assertVersions( new MercuryVersionComparator());
     }
+
+    @Test
     public void testNumericVersionComparator() {
         assertVersions( new NumericVersionComparator() );
     }
@@ -54,7 +60,7 @@ public class VersionComparatorsTest
     }
 
     public void assertLater(String version, VersionComparator instance) {
-        ArtifactVersion v1 = new DefaultArtifactVersion( version);
+        ArtifactVersion v1 = new DefaultArtifactVersion( version );
         int count = instance.getSegmentCount( v1 );
         for (int i = 0; i < count; i++) {
             ArtifactVersion v2 = instance.incrementSegment( v1, i );

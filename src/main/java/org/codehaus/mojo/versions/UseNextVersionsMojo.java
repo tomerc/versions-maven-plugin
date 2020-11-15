@@ -25,6 +25,7 @@ import org.apache.maven.artifact.versioning.ArtifactVersion;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
+import org.apache.maven.plugins.annotations.Mojo;
 import org.codehaus.mojo.versions.api.ArtifactVersions;
 import org.codehaus.mojo.versions.api.PomHelper;
 import org.codehaus.mojo.versions.rewriting.ModifiedPomXMLEventReader;
@@ -37,11 +38,9 @@ import java.util.Iterator;
  * Replaces any version with the latest version.
  *
  * @author Stephen Connolly
- * @goal use-next-versions
- * @requiresProject true
- * @requiresDirectInvocation true
  * @since 1.0-alpha-3
  */
+@Mojo( name = "use-next-versions", requiresProject = true, requiresDirectInvocation = true, threadSafe = true )
 public class UseNextVersionsMojo
     extends AbstractVersionsDependencyUpdaterMojo
 {
@@ -64,7 +63,7 @@ public class UseNextVersionsMojo
             {
                 useNextVersions( pom, getProject().getDependencyManagement().getDependencies() );
             }
-            if ( isProcessingDependencies() )
+            if ( getProject().getDependencies() != null && isProcessingDependencies() )
             {
                 useNextVersions( pom, getProject().getDependencies() );
             }
@@ -75,18 +74,19 @@ public class UseNextVersionsMojo
         }
     }
 
-    private void useNextVersions( ModifiedPomXMLEventReader pom, Collection dependencies )
+    private void useNextVersions( ModifiedPomXMLEventReader pom, Collection<Dependency> dependencies )
         throws XMLStreamException, MojoExecutionException, ArtifactMetadataRetrievalException
     {
-        Iterator i = dependencies.iterator();
-
-        while ( i.hasNext() )
-        {
-            Dependency dep = (Dependency) i.next();
-
+        for ( Dependency dep : dependencies ) {
             if ( isExcludeReactor() && isProducedByReactor( dep ) )
             {
                 getLog().info( "Ignoring reactor dependency: " + toString( dep ) );
+                continue;
+            }
+
+            if ( isHandledByProperty( dep ) )
+            {
+                getLog().debug( "Ignoring dependency with property as version: " + toString( dep ) );
                 continue;
             }
 
@@ -98,13 +98,13 @@ public class UseNextVersionsMojo
             }
 
             getLog().debug( "Looking for newer versions of " + toString( dep ) );
-            ArtifactVersions versions =
-                getHelper().lookupArtifactVersions( artifact, Boolean.TRUE.equals( allowSnapshots ) );
-            ArtifactVersion[] newer = versions.getNewerVersions( version, false );
+            ArtifactVersions versions = getHelper().lookupArtifactVersions( artifact, false );
+            ArtifactVersion[] newer = versions.getNewerVersions( version, Boolean.TRUE.equals( allowSnapshots ) );
             if ( newer.length > 0 )
             {
                 String newVersion = newer[0].toString();
-                if ( PomHelper.setDependencyVersion( pom, dep.getGroupId(), dep.getArtifactId(), version, newVersion ) )
+                if ( PomHelper.setDependencyVersion( pom, dep.getGroupId(), dep.getArtifactId(), version, newVersion,
+                                                     getProject().getModel() ) )
                 {
                     getLog().info( "Updated " + toString( dep ) + " to version " + newVersion );
                 }

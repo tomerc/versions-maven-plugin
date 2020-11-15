@@ -66,12 +66,12 @@ import org.codehaus.plexus.component.configurator.expression.ExpressionEvaluator
 import org.codehaus.plexus.util.StringUtils;
 import org.codehaus.plexus.util.xml.pull.XmlPullParserException;
 
-import java.io.BufferedInputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
+import java.io.*;
+import java.net.URL;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -97,6 +97,8 @@ import java.util.regex.Pattern;
 public class DefaultVersionsHelper
     implements VersionsHelper
 {
+    private static final String CLASSPATH_PROTOCOL = "classpath";
+
     private static final String TYPE_EXACT = "exact";
 
     private static final String TYPE_REGEX = "regex";
@@ -106,6 +108,7 @@ public class DefaultVersionsHelper
     /**
      * The artifact comparison rules to use.
      *
+     * @deprecated
      * @since 1.0-alpha-3
      */
     private final RuleSet ruleSet;
@@ -177,7 +180,7 @@ public class DefaultVersionsHelper
      * Constructs a new {@link DefaultVersionsHelper}.
      *
      * @param artifactFactory The artifact factory.
-     * @param artifactResolver
+     * @param artifactResolver Artifact resolver
      * @param artifactMetadataSource The artifact metadata source to use.
      * @param remoteArtifactRepositories The remote artifact repositories to consult.
      * @param remotePluginRepositories The remote plugin repositories to consult.
@@ -190,6 +193,7 @@ public class DefaultVersionsHelper
      * @param mavenSession The maven session information.
      * @param pathTranslator The path translator component. @throws org.apache.maven.plugin.MojoExecutionException If
      *            things go wrong.
+     * @throws MojoExecutionException if something goes wrong.
      * @since 1.0-alpha-3
      */
     public DefaultVersionsHelper( ArtifactFactory artifactFactory, ArtifactResolver artifactResolver,
@@ -197,7 +201,7 @@ public class DefaultVersionsHelper
                                   List remotePluginRepositories, ArtifactRepository localRepository,
                                   WagonManager wagonManager, Settings settings, String serverId, String rulesUri,
                                   Log log, MavenSession mavenSession, PathTranslator pathTranslator )
-                                      throws MojoExecutionException
+        throws MojoExecutionException
     {
         this.artifactFactory = artifactFactory;
         this.artifactResolver = artifactResolver;
@@ -211,6 +215,7 @@ public class DefaultVersionsHelper
         this.log = log;
     }
 
+    @Deprecated
     private static RuleSet getRuleSet( Wagon wagon, String remoteURI )
         throws IOException, AuthorizationException, TransferFailedException, ResourceDoesNotExistException
     {
@@ -218,38 +223,16 @@ public class DefaultVersionsHelper
         try
         {
             wagon.get( remoteURI, tempFile );
-            RuleXpp3Reader reader = new RuleXpp3Reader();
-            FileInputStream fis = new FileInputStream( tempFile );
+            InputStream is = new FileInputStream(tempFile );
             try
             {
-                BufferedInputStream bis = new BufferedInputStream( fis );
-                try
-                {
-                    return reader.read( bis );
-                }
-                catch ( XmlPullParserException e )
-                {
-                    final IOException ioe = new IOException();
-                    ioe.initCause( e );
-                    throw ioe;
-                }
-                finally
-                {
-                    try
-                    {
-                        bis.close();
-                    }
-                    catch ( IOException e )
-                    {
-                        // ignore
-                    }
-                }
+                return readRulesFromStream(is);
             }
             finally
             {
                 try
                 {
-                    fis.close();
+                    is.close();
                 }
                 catch ( IOException e )
                 {
@@ -263,6 +246,34 @@ public class DefaultVersionsHelper
             {
                 // maybe we can delete this later
                 tempFile.deleteOnExit();
+            }
+        }
+    }
+
+    private static RuleSet readRulesFromStream(InputStream stream)
+        throws IOException {
+        RuleXpp3Reader reader = new RuleXpp3Reader();
+        BufferedInputStream bis = new BufferedInputStream( stream );
+
+        try
+        {
+            return reader.read( bis );
+        }
+        catch ( XmlPullParserException e )
+        {
+            final IOException ioe = new IOException();
+            ioe.initCause( e );
+            throw ioe;
+        }
+        finally
+        {
+            try
+            {
+                bis.close();
+            }
+            catch ( IOException e )
+            {
+                // ignore
             }
         }
     }
@@ -281,86 +292,118 @@ public class DefaultVersionsHelper
 
     private static RuleSet loadRuleSet( String serverId, Settings settings, WagonManager wagonManager, String rulesUri,
                                         Log logger )
-                                            throws MojoExecutionException
-    {
+        throws MojoExecutionException {
         RuleSet ruleSet = new RuleSet();
-        if ( rulesUri != null && rulesUri.trim().length() != 0 )
-        {
-            try
-            {
-                int split = rulesUri.lastIndexOf( '/' );
-                String baseUri;
-                String fileUri;
-                if ( split != -1 )
-                {
-                    baseUri = rulesUri.substring( 0, split ) + '/';
-                    fileUri = split + 1 < rulesUri.length() ? rulesUri.substring( split + 1 ) : "";
-                }
-                else
-                {
-                    baseUri = rulesUri;
-                    fileUri = "";
-                }
-                try
-                {
-                    Wagon wagon = WagonUtils.createWagon( serverId, baseUri, wagonManager, settings, logger );
-                    try
-                    {
-                        logger.debug( "Trying to load ruleset from file \"" + fileUri + "\" in " + baseUri );
-                        final RuleSet loaded = getRuleSet( wagon, fileUri );
-                        ruleSet.setRules( loaded.getRules() );
-                        ruleSet.setIgnoreVersions( loaded.getIgnoreVersions() );
-                        logger.debug( "Rule set loaded" );
-                    }
-                    finally
-                    {
-                        if ( wagon != null )
-                        {
-                            try
-                            {
-                                wagon.disconnect();
-                            }
-                            catch ( ConnectionException e )
-                            {
-                                logger.warn( "Could not disconnect wagon!", e );
-                            }
-                        }
+        boolean rulesUriGiven = isRulesUriNotBlank(rulesUri);
 
+        if (rulesUriGiven) {
+            RuleSet loadedRules;
+
+            if (isClasspathUri(rulesUri)) {
+                loadedRules = getRulesFromClasspath(rulesUri, logger);
+            } else {
+                loadedRules = getRulesViaWagon(rulesUri, logger, serverId, serverId, wagonManager,
+                                                       settings);
+            }
+
+            ruleSet.setIgnoreVersions(loadedRules.getIgnoreVersions());
+            ruleSet.setRules(loadedRules.getRules());
+        }
+
+        return ruleSet;
+    }
+
+    private static RuleSet getRulesFromClasspath(String uri, Log logger)
+        throws MojoExecutionException {
+        logger.debug("Going to load rules from \"" + uri + "\"");
+
+        String choppedUrl = uri.substring(CLASSPATH_PROTOCOL.length() + 3);
+
+        URL url = DefaultVersionsHelper.class.getResource(choppedUrl);
+
+        if (null == url) {
+            String message = "Resource \"" + uri + "\" not found in classpath.";
+
+            throw new MojoExecutionException(message);
+        }
+
+        try {
+            RuleSet rules = readRulesFromStream(url.openStream());
+            logger.debug("Loaded rules from \"" + uri + "\" successfully");
+            return rules;
+        }
+        catch (IOException e) {
+            throw new MojoExecutionException("Could not load specified rules from " + uri, e);
+        }
+    }
+
+    private static boolean isRulesUriNotBlank(String rulesUri) {
+        return rulesUri != null && rulesUri.trim().length() != 0;
+    }
+
+    private static RuleSet getRulesViaWagon(String rulesUri, Log logger, String serverId, String id,
+                                            WagonManager wagonManager, Settings settings)
+        throws MojoExecutionException {
+        RuleSet loadedRules = new RuleSet();
+
+        int split = rulesUri.lastIndexOf('/');
+        String baseUri = rulesUri;
+        String fileUri = "";
+
+        if (split != -1) {
+            baseUri = rulesUri.substring(0, split) + '/';
+            fileUri = split + 1 < rulesUri.length() ? rulesUri.substring(split + 1) : "";
+        }
+
+        try {
+            Wagon wagon = WagonUtils.createWagon(serverId, baseUri, wagonManager, settings, logger);
+            try {
+                logger.debug("Trying to load ruleset from file \"" + fileUri + "\" in " + baseUri);
+                loadedRules = getRuleSet(wagon, fileUri);
+            }
+            finally {
+                logger.debug("Rule set loaded");
+
+                if (wagon != null) {
+                    try {
+                        wagon.disconnect();
+                    }
+                    catch (ConnectionException e) {
+                        logger.warn("Could not disconnect wagon!", e);
                     }
                 }
-                catch ( TransferFailedException e )
-                {
-                    throw new MojoExecutionException( "Could not transfer rules from " + rulesUri, e );
-                }
-                catch ( AuthorizationException e )
-                {
-                    throw new MojoExecutionException( "Authorization failure trying to load rules from " + rulesUri,
-                                                      e );
-                }
-                catch ( ResourceDoesNotExistException e )
-                {
-                    throw new MojoExecutionException( "Could not load specified rules from " + rulesUri, e );
-                }
-                catch ( AuthenticationException e )
-                {
-                    throw new MojoExecutionException( "Authentication failure trying to load rules from " + rulesUri,
-                                                      e );
-                }
-                catch ( UnsupportedProtocolException e )
-                {
-                    throw new MojoExecutionException( "Unsupported protocol for " + rulesUri, e );
-                }
-                catch ( ConnectionException e )
-                {
-                    throw new MojoExecutionException( "Could not establish connection to " + rulesUri, e );
-                }
-            }
-            catch ( IOException e )
-            {
-                throw new MojoExecutionException( "Could not load specified rules from " + rulesUri, e );
             }
         }
-        return ruleSet;
+        catch (TransferFailedException e) {
+            throw new MojoExecutionException("Could not transfer rules from " + rulesUri, e);
+        }
+        catch (AuthorizationException e) {
+            throw new MojoExecutionException("Authorization failure trying to load rules from " + rulesUri, e);
+        }
+        catch (ResourceDoesNotExistException e) {
+            throw new MojoExecutionException("Could not load specified rules from " + rulesUri, e);
+        }
+        catch (AuthenticationException e) {
+            throw new MojoExecutionException("Authentication failure trying to load rules from " + rulesUri, e);
+        }
+        catch (UnsupportedProtocolException e) {
+            throw new MojoExecutionException("Unsupported protocol for " + rulesUri, e);
+        }
+        catch (ConnectionException e) {
+            throw new MojoExecutionException("Could not establish connection to " + rulesUri, e);
+        }
+        catch (IOException e) {
+            throw new MojoExecutionException("Could not load specified rules from " + rulesUri, e);
+        }
+
+        return loadedRules;
+    }
+
+    static boolean isClasspathUri(String uri) {
+        boolean startsWithProtocol = null != uri && uri.startsWith(CLASSPATH_PROTOCOL);
+        boolean hasColonNext = null != uri && uri.charAt(CLASSPATH_PROTOCOL.length()) == ':';
+
+        return startsWithProtocol && hasColonNext;
     }
 
     /**
@@ -655,13 +698,13 @@ public class DefaultVersionsHelper
     /**
      * {@inheritDoc}
      */
-    public ArtifactVersions lookupArtifactUpdates( Artifact artifact, Boolean allowSnapshots,
+    public ArtifactVersions lookupArtifactUpdates( Artifact artifact, boolean allowSnapshots,
                                                    boolean usePluginRepositories )
-                                                       throws ArtifactMetadataRetrievalException
+        throws ArtifactMetadataRetrievalException
     {
         ArtifactVersions artifactVersions = lookupArtifactVersions( artifact, usePluginRepositories );
 
-        artifactVersions.setIncludeSnapshots( Boolean.TRUE.equals( allowSnapshots ) );
+        artifactVersions.setIncludeSnapshots( allowSnapshots );
 
         return artifactVersions;
     }
@@ -669,17 +712,15 @@ public class DefaultVersionsHelper
     /**
      * {@inheritDoc}
      */
-    public Map<Dependency, ArtifactVersions> lookupDependenciesUpdates( Set dependencies,
+    public Map<Dependency, ArtifactVersions> lookupDependenciesUpdates( Set<Dependency> dependencies,
                                                                         boolean usePluginRepositories )
-                                                                            throws ArtifactMetadataRetrievalException,
-                                                                            InvalidVersionSpecificationException
+        throws ArtifactMetadataRetrievalException, InvalidVersionSpecificationException
     {
         // Create the request for details collection for parallel lookup...
         final List<Callable<DependencyArtifactVersions>> requestsForDetails =
             new ArrayList<Callable<DependencyArtifactVersions>>( dependencies.size() );
-        for ( final Object dependency1 : dependencies )
+        for ( final Dependency dependency : dependencies )
         {
-            final Dependency dependency = (Dependency) dependency1;
             requestsForDetails.add( new DependencyLookup( dependency, usePluginRepositories ) );
         }
 
@@ -737,7 +778,7 @@ public class DefaultVersionsHelper
     /**
      * {@inheritDoc}
      */
-    public Map<Plugin, PluginUpdatesDetails> lookupPluginsUpdates( Set<Plugin> plugins, Boolean allowSnapshots )
+    public Map<Plugin, PluginUpdatesDetails> lookupPluginsUpdates( Set<Plugin> plugins, boolean allowSnapshots )
         throws ArtifactMetadataRetrievalException, InvalidVersionSpecificationException
     {
         // Create the request for details collection for parallel lookup...
@@ -785,7 +826,7 @@ public class DefaultVersionsHelper
     /**
      * {@inheritDoc}
      */
-    public PluginUpdatesDetails lookupPluginUpdates( Plugin plugin, Boolean allowSnapshots )
+    public PluginUpdatesDetails lookupPluginUpdates( Plugin plugin, boolean allowSnapshots )
         throws ArtifactMetadataRetrievalException, InvalidVersionSpecificationException
     {
         String version = plugin.getVersion();
@@ -795,7 +836,7 @@ public class DefaultVersionsHelper
 
         VersionRange versionRange = VersionRange.createFromVersion( version );
 
-        final boolean includeSnapshots = Boolean.TRUE.equals( allowSnapshots );
+        final boolean includeSnapshots = allowSnapshots;
 
         final ArtifactVersions pluginArtifactVersions =
             lookupArtifactVersions( createPluginArtifact( plugin.getGroupId(), plugin.getArtifactId(), versionRange ),
@@ -827,7 +868,7 @@ public class DefaultVersionsHelper
                                                                     Property[] propertyDefinitions,
                                                                     String includeProperties, String excludeProperties,
                                                                     boolean autoLinkItems )
-                                                                        throws MojoExecutionException
+        throws MojoExecutionException
     {
         Map<String, Property> properties = new HashMap<String, Property>();
         if ( propertyDefinitions != null )
@@ -868,17 +909,24 @@ public class DefaultVersionsHelper
                 }
             }
         }
+
+        List<String> includePropertiesList = getSplittedProperties( includeProperties );
+        List<String> excludePropertiesList = getSplittedProperties( excludeProperties );
+
         getLog().debug( "Searching for properties associated with builders" );
         Iterator<Property> i = properties.values().iterator();
         while ( i.hasNext() )
         {
             Property property = i.next();
-            if ( includeProperties != null && !includeProperties.contains( property.getName() ) )
+
+            getLog().debug( "includePropertiesList:" + includePropertiesList + " property: " + property.getName() );
+            getLog().debug( "excludePropertiesList:" + excludePropertiesList + " property: " + property.getName() );
+            if ( !includePropertiesList.isEmpty() && !includePropertiesList.contains( property.getName() ) )
             {
                 getLog().debug( "Skipping property ${" + property.getName() + "}" );
                 i.remove();
             }
-            else if ( excludeProperties != null && excludeProperties.contains( property.getName() ) )
+            else if ( !excludePropertiesList.isEmpty() && excludePropertiesList.contains( property.getName() ) )
             {
                 getLog().debug( "Ignoring property ${" + property.getName() + "}" );
                 i.remove();
@@ -938,6 +986,17 @@ public class DefaultVersionsHelper
             }
         }
         return propertyVersions;
+    }
+
+    private List<String> getSplittedProperties( String commaSeparatedProperties )
+    {
+        List<String> propertiesList = Collections.emptyList();
+        if ( StringUtils.isNotEmpty( commaSeparatedProperties ) )
+        {
+            String[] splittedProps = StringUtils.split( commaSeparatedProperties, "," );
+            propertiesList = Arrays.asList( StringUtils.stripAll( splittedProps ) );
+        }
+        return propertiesList;
     }
 
     // This is a data container to hold the result of a Dependency lookup to its ArtifactVersions.

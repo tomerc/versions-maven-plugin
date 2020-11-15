@@ -33,6 +33,8 @@ import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
+import org.apache.maven.plugins.annotations.Component;
+import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.project.MavenProjectBuilder;
 import org.apache.maven.project.path.PathTranslator;
@@ -69,114 +71,107 @@ public abstract class AbstractVersionsUpdaterMojo
     /**
      * The Maven Project.
      *
-     * @parameter property="project"
-     * @required
-     * @readonly
      * @since 1.0-alpha-1
      */
+    @Parameter( defaultValue = "${project}", required = true, readonly = true )
     protected MavenProject project;
 
     /**
-     * @component
      * @since 1.0-alpha-1
      */
+    @Component
     protected org.apache.maven.artifact.factory.ArtifactFactory artifactFactory;
 
     /**
-     * @component
      * @since 1.0-alpha-1
      */
+    @Component
     protected org.apache.maven.artifact.resolver.ArtifactResolver resolver;
 
     /**
-     * @component allo
      * @since 1.0-alpha-1
      */
+    @Component
     protected MavenProjectBuilder projectBuilder;
 
     /**
-     * @parameter property="reactorProjects"
-     * @required
-     * @readonly
      * @since 1.0-alpha-1
      */
+    @Parameter( defaultValue = "${reactorProjects}", required = true, readonly = true )
     protected List reactorProjects;
 
     /**
      * The artifact metadata source to use.
      *
-     * @component
-     * @required
-     * @readonly
      * @since 1.0-alpha-1
      */
+    @Component
     protected ArtifactMetadataSource artifactMetadataSource;
 
     /**
-     * @parameter property="project.remoteArtifactRepositories"
-     * @readonly
      * @since 1.0-alpha-3
      */
+    @Parameter( defaultValue = "${project.remoteArtifactRepositories}", readonly = true )
     protected List remoteArtifactRepositories;
 
     /**
-     * @parameter property="project.pluginArtifactRepositories"
-     * @readonly
      * @since 1.0-alpha-3
      */
+    @Parameter( defaultValue = "${project.pluginArtifactRepositories}", readonly = true )
     protected List remotePluginRepositories;
 
     /**
-     * @parameter property="localRepository"
-     * @readonly
      * @since 1.0-alpha-1
      */
+    @Parameter( defaultValue = "${localRepository}", readonly = true )
     protected ArtifactRepository localRepository;
 
     /**
      * @component
      * @since 1.0-alpha-3
      */
+    @Component
     private WagonManager wagonManager;
 
     /**
-     * @parameter property="settings"
-     * @readonly
      * @since 1.0-alpha-3
      */
+    @Parameter( defaultValue = "${settings}", readonly = true )
     protected Settings settings;
 
     /**
      * settings.xml's server id for the URL. This is used when wagon needs extra authentication information.
      *
-     * @parameter property="maven.version.rules.serverId" default-value="serverId";
      * @since 1.0-alpha-3
      */
+    @Parameter( property = "maven.version.rules.serverId", defaultValue = "serverId" )
     private String serverId;
 
     /**
-     * The Wagon URI of a ruleSet file containing the rules that control how to compare version numbers.
+     * URI of a ruleSet file containing the rules that control how to compare
+     * version numbers. The URI could be either a Wagon URI or a classpath URI
+     * (e.g. <code>classpath:///package/sub/package/rules.xml</code>).
      *
-     * @parameter property="maven.version.rules"
      * @since 1.0-alpha-3
      */
+    @Parameter( property = "maven.version.rules" )
     private String rulesUri;
 
     /**
-     * Controls whether a backup pom should be created (default is true).
+     * Controls whether a backup pom should be created.
      *
-     * @parameter property="generateBackupPoms"
      * @since 1.0-alpha-3
      */
-    private Boolean generateBackupPoms;
+    @Parameter( property = "generateBackupPoms", defaultValue = "true" )
+    private boolean generateBackupPoms;
 
     /**
      * Whether to allow snapshots when searching for the latest version of an artifact.
      *
-     * @parameter property="allowSnapshots" default-value="false"
      * @since 1.0-alpha-1
      */
-    protected Boolean allowSnapshots;
+    @Parameter( property = "allowSnapshots", defaultValue = "false" )
+    protected boolean allowSnapshots;
 
     /**
      * Our versions helper.
@@ -186,21 +181,15 @@ public abstract class AbstractVersionsUpdaterMojo
     /**
      * The Maven Session.
      *
-     * @parameter property="session"
-     * @required
-     * @readonly
      * @since 1.0-alpha-1
      */
+    @Parameter( defaultValue = "${session}", required = true, readonly = true )
     protected MavenSession session;
 
-    /**
-     * @component
-     */
+    @Component
     protected PathTranslator pathTranslator;
 
-    /**
-     * @component
-     */
+    @Component
     protected ArtifactResolver artifactResolver;
 
     // --------------------- GETTER / SETTER METHODS ---------------------
@@ -240,7 +229,8 @@ public abstract class AbstractVersionsUpdaterMojo
         this.project = project;
     }
 
-    public String getVersion() {
+    public String getVersion()
+    {
         return getProject() == null ? null : getProject().getVersion();
     }
 
@@ -268,17 +258,18 @@ public abstract class AbstractVersionsUpdaterMojo
      * @param artifact The artifact.
      * @param versionRange The version range.
      * @param allowingSnapshots <code>null</code> for no override, otherwise the local override to apply.
-     * @param usePluginRepositories
+     * @param usePluginRepositories Use plugin repositories
      * @return The latest version of the specified artifact that matches the specified version range or
      *         <code>null</code> if no matching version could be found.
      * @throws ArtifactMetadataRetrievalException If the artifact metadata could not be found.
+     * @throws MojoExecutionException if something goes wrong.
      * @since 1.0-alpha-1
      */
     protected ArtifactVersion findLatestVersion( Artifact artifact, VersionRange versionRange,
                                                  Boolean allowingSnapshots, boolean usePluginRepositories )
-                                                     throws ArtifactMetadataRetrievalException, MojoExecutionException
+        throws ArtifactMetadataRetrievalException, MojoExecutionException
     {
-        boolean includeSnapshots = Boolean.TRUE.equals( this.allowSnapshots );
+        boolean includeSnapshots = this.allowSnapshots;
         if ( Boolean.TRUE.equals( allowingSnapshots ) )
         {
             includeSnapshots = true;
@@ -319,17 +310,13 @@ public abstract class AbstractVersionsUpdaterMojo
         try
         {
             StringBuilder input = PomHelper.readXmlFile( outFile );
-            ModifiedPomXMLEventReader newPom = newModifiedPomXER( input );
+            ModifiedPomXMLEventReader newPom = newModifiedPomXER( input, outFile.getAbsolutePath() );
 
             update( newPom );
 
             if ( newPom.isModified() )
             {
-                if ( Boolean.FALSE.equals( generateBackupPoms ) )
-                {
-                    getLog().debug( "Skipping generation of backup file" );
-                }
-                else
+                if ( generateBackupPoms )
                 {
                     File backupFile = new File( outFile.getParentFile(), outFile.getName() + ".versionsBackup" );
                     if ( !backupFile.exists() )
@@ -341,6 +328,10 @@ public abstract class AbstractVersionsUpdaterMojo
                     {
                         getLog().debug( "Leaving existing backup " + backupFile + " unmodified" );
                     }
+                }
+                else
+                {
+                    getLog().debug( "Skipping generation of backup file" );
                 }
                 writeFile( outFile, input );
             }
@@ -364,16 +355,17 @@ public abstract class AbstractVersionsUpdaterMojo
      * Creates a {@link org.codehaus.mojo.versions.rewriting.ModifiedPomXMLEventReader} from a StringBuilder.
      *
      * @param input The XML to read and modify.
+     * @param path Path pointing to the source of the XML
      * @return The {@link org.codehaus.mojo.versions.rewriting.ModifiedPomXMLEventReader}.
      */
-    protected final ModifiedPomXMLEventReader newModifiedPomXER( StringBuilder input )
+    protected final ModifiedPomXMLEventReader newModifiedPomXER( StringBuilder input, String path )
     {
         ModifiedPomXMLEventReader newPom = null;
         try
         {
             XMLInputFactory inputFactory = XMLInputFactory2.newInstance();
             inputFactory.setProperty( XMLInputFactory2.P_PRESERVE_LOCATION, Boolean.TRUE );
-            newPom = new ModifiedPomXMLEventReader( input, inputFactory );
+            newPom = new ModifiedPomXMLEventReader( input, inputFactory, path );
         }
         catch ( XMLStreamException e )
         {
@@ -410,6 +402,7 @@ public abstract class AbstractVersionsUpdaterMojo
      * @throws MojoExecutionException If things go wrong.
      * @throws MojoFailureException If things go wrong.
      * @throws javax.xml.stream.XMLStreamException If things go wrong.
+     * @throws ArtifactMetadataRetrievalException if something goes wrong.
      * @since 1.0-alpha-1
      */
     protected abstract void update( ModifiedPomXMLEventReader pom )
@@ -462,26 +455,26 @@ public abstract class AbstractVersionsUpdaterMojo
      * Based on the passed flags, determines which segment is unchangable. This can be used when determining an upper
      * bound for the "latest" version.
      *
-     * @param allowMajorUpdates
-     * @param allowMinorUpdates
-     * @param allowIncrementalUpdates
+     * @param allowMajorUpdates Allow major updates
+     * @param allowMinorUpdates Allow minor updates
+     * @param allowIncrementalUpdates Allow incremental updates
      * @return Returns the segment that is unchangable. If any segment can change, returns -1.
      */
-    protected int determineUnchangedSegment( Boolean allowMajorUpdates, Boolean allowMinorUpdates,
-                                             Boolean allowIncrementalUpdates )
+    protected int determineUnchangedSegment( boolean allowMajorUpdates, boolean allowMinorUpdates,
+                                             boolean allowIncrementalUpdates )
     {
         int segment;
-        if ( Boolean.TRUE.equals( allowMajorUpdates ) )
+        if ( allowMajorUpdates )
         {
             segment = -1;
             getLog().info( "Major version changes allowed" );
         }
-        else if ( Boolean.TRUE.equals( allowMinorUpdates ) )
+        else if ( allowMinorUpdates )
         {
             segment = 0;
             getLog().info( "Minor version changes allowed" );
         }
-        else if ( Boolean.TRUE.equals( allowIncrementalUpdates ) )
+        else if ( allowIncrementalUpdates )
         {
             segment = 1;
             getLog().info( "Incremental version changes allowed" );
@@ -497,10 +490,19 @@ public abstract class AbstractVersionsUpdaterMojo
 
     protected void updatePropertyToNewestVersion( ModifiedPomXMLEventReader pom, Property property,
                                                   PropertyVersions version, String currentVersion )
-                                                      throws MojoExecutionException, XMLStreamException
+        throws MojoExecutionException, XMLStreamException
     {
-        ArtifactVersion winner = version.getNewestVersion( currentVersion, property, this.allowSnapshots,
-                                                           this.reactorProjects, this.getHelper() );
+        updatePropertyToNewestVersion( pom, property, version, currentVersion, false, -1 );
+    }
+
+    protected void updatePropertyToNewestVersion( ModifiedPomXMLEventReader pom, Property property,
+                                                  PropertyVersions version, String currentVersion,
+                                                  boolean allowDowngrade, int segment )
+        throws MojoExecutionException, XMLStreamException
+    {
+        ArtifactVersion winner =
+            version.getNewestVersion( currentVersion, property, this.allowSnapshots, this.reactorProjects,
+                                      this.getHelper(), allowDowngrade, segment );
 
         if ( winner == null || currentVersion.equals( winner.toString() ) )
         {

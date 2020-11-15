@@ -23,10 +23,14 @@ import org.apache.maven.artifact.metadata.ArtifactMetadataRetrievalException;
 import org.apache.maven.artifact.versioning.InvalidVersionSpecificationException;
 import org.apache.maven.doxia.sink.Sink;
 import org.apache.maven.model.Plugin;
+import org.apache.maven.plugins.annotations.Mojo;
+import org.apache.maven.plugins.annotations.Parameter;
+import org.apache.maven.plugins.annotations.ResolutionScope;
 import org.apache.maven.reporting.MavenReportException;
 import org.codehaus.mojo.versions.utils.PluginComparator;
 import org.codehaus.plexus.util.StringUtils;
 
+import java.io.File;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -36,14 +40,20 @@ import java.util.TreeSet;
  * Generates a report of available updates for the plugins of a project.
  *
  * @author Stephen Connolly
- * @goal plugin-updates-report
- * @requiresDependencyResolution runtime
- * @requiresProject true
  * @since 1.0-beta-1
  */
+@Mojo( name = "plugin-updates-report", requiresProject = true, requiresDependencyResolution = ResolutionScope.RUNTIME, threadSafe = true )
 public class PluginUpdatesReport
     extends AbstractVersionsReport
 {
+
+    /**
+     * Report formats (html and/or xml). HTML by default.
+     * 
+     */
+    @Parameter( property = "pluginUpdatesReportFormats", defaultValue = "html" )
+    private String[] formats = new String[] { "html" };
+
     /**
      * {@inheritDoc}
      */
@@ -82,13 +92,13 @@ public class PluginUpdatesReport
     protected void doGenerateReport( Locale locale, Sink sink )
         throws MavenReportException
     {
-        Set<Plugin> pluginManagement = new TreeSet<Plugin>( new PluginComparator() );
+        Set<Plugin> pluginManagement = new TreeSet<>( new PluginComparator() );
         if ( haveBuildPluginManagementPlugins() )
         {
             pluginManagement.addAll( getProject().getBuild().getPluginManagement().getPlugins() );
         }
 
-        Set<Plugin> plugins = new TreeSet<Plugin>( new PluginComparator() );
+        Set<Plugin> plugins = new TreeSet<>( new PluginComparator() );
         if ( haveBuildPlugins() )
         {
             plugins.addAll( getProject().getBuild().getPlugins() );
@@ -102,15 +112,31 @@ public class PluginUpdatesReport
                 getHelper().lookupPluginsUpdates( plugins, getAllowSnapshots() );
             Map<Plugin, PluginUpdatesDetails> pluginManagementUpdates =
                 getHelper().lookupPluginsUpdates( pluginManagement, getAllowSnapshots() );
-            PluginUpdatesRenderer renderer = new PluginUpdatesRenderer( sink, getI18n(), getOutputName(), locale,
-                                                                        pluginUpdates, pluginManagementUpdates );
-            renderer.render();
+            for ( String format : formats )
+            {
+                if ( "html".equals( format ) )
+                {
+                    PluginUpdatesRenderer renderer =
+                        new PluginUpdatesRenderer( sink, getI18n(), getOutputName(), locale, pluginUpdates,
+                                                   pluginManagementUpdates );
+                    renderer.render();
+                }
+                else if ( "xml".equals( format ) )
+                {
+                    File outputDir = new File(getProject().getBuild().getDirectory());
+                    if (!outputDir.exists())
+                    {
+                        outputDir.mkdirs();
+                    }
+                    String outputFile =
+                        outputDir.getAbsolutePath() + File.separator + getOutputName() + ".xml";
+                    PluginUpdatesXmlRenderer xmlGenerator =
+                        new PluginUpdatesXmlRenderer( pluginUpdates, pluginManagementUpdates, outputFile );
+                    xmlGenerator.render();
+                }
+            }
         }
-        catch ( InvalidVersionSpecificationException e )
-        {
-            throw new MavenReportException( e.getMessage(), e );
-        }
-        catch ( ArtifactMetadataRetrievalException e )
+        catch ( InvalidVersionSpecificationException | ArtifactMetadataRetrievalException e )
         {
             throw new MavenReportException( e.getMessage(), e );
         }
@@ -128,7 +154,7 @@ public class PluginUpdatesReport
      */
     private static Set<Plugin> removePluginManagment( Set<Plugin> plugins, Set<Plugin> pluginManagement )
     {
-        Set<Plugin> result = new TreeSet<Plugin>( new PluginComparator() );
+        Set<Plugin> result = new TreeSet<>( new PluginComparator() );
         for ( Plugin c : plugins )
         {
             boolean matched = false;

@@ -35,6 +35,7 @@ import java.util.Stack;
  * @author <a href="mailto:kenney@apache.org">Kenney Westerhof</a>
  * @author <a href="mailto:hboutemy@apache.org">Herve Boutemy</a>
  * @version $Id: ComparableVersion.java 720520 2008-11-25 16:07:14Z bentmann $
+ * Note: The implementation of the maven core should be used.
  */
 public class ComparableVersion
     implements Comparable
@@ -47,17 +48,17 @@ public class ComparableVersion
 
     private interface Item
     {
-        public static final int INTEGER_ITEM = 0;
+        int INTEGER_ITEM = 0;
 
-        public static final int STRING_ITEM = 1;
+        int STRING_ITEM = 1;
 
-        public static final int LIST_ITEM = 2;
+        int LIST_ITEM = 2;
 
-        public int compareTo( Item item );
+        int compareTo( Item item );
 
-        public int getType();
+        int getType();
 
-        public boolean isNull();
+        boolean isNull();
     }
 
     /**
@@ -66,7 +67,7 @@ public class ComparableVersion
     private static class IntegerItem
         implements Item
     {
-        private static final BigInteger BigInteger_ZERO = new BigInteger( "0" );
+        private static final BigInteger BIG_INTEGEGER_ZERO = new BigInteger( "0" );
 
         private final BigInteger value;
 
@@ -74,7 +75,7 @@ public class ComparableVersion
 
         private IntegerItem()
         {
-            this.value = BigInteger_ZERO;
+            this.value = BIG_INTEGEGER_ZERO;
         }
 
         public IntegerItem( String str )
@@ -89,14 +90,14 @@ public class ComparableVersion
 
         public boolean isNull()
         {
-            return BigInteger_ZERO.equals( value );
+            return BIG_INTEGEGER_ZERO.equals( value );
         }
 
         public int compareTo( Item item )
         {
             if ( item == null )
             {
-                return BigInteger_ZERO.equals( value ) ? 0 : 1; // 1.0 == 1, 1.1 > 1
+                return BIG_INTEGEGER_ZERO.equals( value ) ? 0 : 1; // 1.0 == 1, 1.1 > 1
             }
 
             switch ( item.getType() )
@@ -129,7 +130,7 @@ public class ComparableVersion
     {
         private final static String[] QUALIFIERS = { "snapshot", "alpha", "beta", "milestone", "rc", "", "sp" };
 
-        private final static List _QUALIFIERS = Arrays.asList( QUALIFIERS );
+        private final static List QUALIFIERS_LIST = Arrays.asList( QUALIFIERS );
 
         private final static Properties ALIASES = new Properties();
 
@@ -144,7 +145,7 @@ public class ComparableVersion
          * A comparable for the empty-string qualifier. This one is used to determine if a given qualifier makes the
          * version older than one without a qualifier, or more recent.
          */
-        private static Comparable RELEASE_VERSION_INDEX = String.valueOf( _QUALIFIERS.indexOf( "" ) );
+        private static Comparable RELEASE_VERSION_INDEX = String.valueOf( QUALIFIERS_LIST.indexOf( "" ) );
 
         private String value;
 
@@ -194,9 +195,9 @@ public class ComparableVersion
          */
         public static Comparable comparableQualifier( String qualifier )
         {
-            int i = _QUALIFIERS.indexOf( qualifier );
+            int i = QUALIFIERS_LIST.indexOf( qualifier );
 
-            return i == -1 ? _QUALIFIERS.size() + "-" + qualifier : String.valueOf( i );
+            return i == -1 ? QUALIFIERS_LIST.size() + "-" + qualifier : String.valueOf( i );
         }
 
         public int compareTo( Item item )

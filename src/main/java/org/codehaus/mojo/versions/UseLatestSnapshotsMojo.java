@@ -26,8 +26,11 @@ import org.apache.maven.artifact.versioning.DefaultArtifactVersion;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
+import org.apache.maven.plugins.annotations.Mojo;
+import org.apache.maven.plugins.annotations.Parameter;
 import org.codehaus.mojo.versions.api.ArtifactVersions;
 import org.codehaus.mojo.versions.api.PomHelper;
+import org.codehaus.mojo.versions.ordering.MajorMinorIncrementalFilter;
 import org.codehaus.mojo.versions.ordering.VersionComparator;
 import org.codehaus.mojo.versions.rewriting.ModifiedPomXMLEventReader;
 
@@ -35,6 +38,8 @@ import javax.xml.stream.XMLStreamException;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.List;
+import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -42,11 +47,9 @@ import java.util.regex.Pattern;
  * Replaces any release versions with the latest snapshot version (if it has been deployed).
  *
  * @author Stephen Connolly
- * @goal use-latest-snapshots
- * @requiresProject true
- * @requiresDirectInvocation true
  * @since 1.0-beta-1
  */
+@Mojo( name = "use-latest-snapshots", requiresProject = true, requiresDirectInvocation = true, threadSafe = true )
 public class UseLatestSnapshotsMojo
     extends AbstractVersionsDependencyUpdaterMojo
 {
@@ -54,26 +57,26 @@ public class UseLatestSnapshotsMojo
     /**
      * Whether to allow the major version number to be changed.
      *
-     * @parameter property="allowMajorUpdates" default-value="false"
      * @since 1.0-beta-1
      */
-    protected Boolean allowMajorUpdates;
+    @Parameter( property = "allowMajorUpdates", defaultValue = "false" )
+    protected boolean allowMajorUpdates;
 
     /**
      * Whether to allow the minor version number to be changed.
-     *
-     * @parameter property="allowMinorUpdates" default-value="false"
+     * 
      * @since 1.0-beta-1
      */
-    protected Boolean allowMinorUpdates;
+    @Parameter( property = "allowMinorUpdates", defaultValue = "false" )
+    protected boolean allowMinorUpdates;
 
     /**
      * Whether to allow the incremental version number to be changed.
      *
-     * @parameter property="allowIncrementalUpdates" default-value="true"
      * @since 1.0-beta-1
      */
-    protected Boolean allowIncrementalUpdates;
+    @Parameter( property = "allowIncrementalUpdates", defaultValue = "true" )
+    protected boolean allowIncrementalUpdates;
 
     // ------------------------------ FIELDS ------------------------------
 
@@ -100,9 +103,20 @@ public class UseLatestSnapshotsMojo
             {
                 useLatestSnapshots( pom, getProject().getDependencyManagement().getDependencies() );
             }
-            if ( isProcessingDependencies() )
+            if ( getProject().getDependencies() != null && isProcessingDependencies() )
             {
                 useLatestSnapshots( pom, getProject().getDependencies() );
+            }
+            if ( getProject().getParent() != null && isProcessingParent() )
+            {
+                Dependency dependency = new Dependency();
+                dependency.setArtifactId( getProject().getParent().getArtifactId() );
+                dependency.setGroupId( getProject().getParent().getGroupId() );
+                dependency.setVersion( getProject().getParent().getVersion() );
+                dependency.setType("pom");
+                List list = new ArrayList();
+                list.add(dependency);
+                useLatestSnapshots( pom, list );
             }
         }
         catch ( ArtifactMetadataRetrievalException e )
@@ -111,25 +125,29 @@ public class UseLatestSnapshotsMojo
         }
     }
 
-    private void useLatestSnapshots( ModifiedPomXMLEventReader pom, Collection dependencies )
+    private void useLatestSnapshots( ModifiedPomXMLEventReader pom, Collection<Dependency> dependencies )
         throws XMLStreamException, MojoExecutionException, ArtifactMetadataRetrievalException
     {
         int segment = determineUnchangedSegment( allowMajorUpdates, allowMinorUpdates, allowIncrementalUpdates );
+        MajorMinorIncrementalFilter majorMinorIncfilter =
+                new MajorMinorIncrementalFilter( allowMajorUpdates, allowMinorUpdates, allowIncrementalUpdates );
 
-        Iterator i = dependencies.iterator();
-
-        while ( i.hasNext() )
+        for ( Dependency dep : dependencies )
         {
-            Dependency dep = (Dependency) i.next();
-
             if ( isExcludeReactor() && isProducedByReactor( dep ) )
             {
                 getLog().info( "Ignoring reactor dependency: " + toString( dep ) );
                 continue;
             }
 
+            if ( isHandledByProperty( dep ) )
+            {
+                getLog().debug( "Ignoring dependency with property as version: " + toString( dep ) );
+                continue;
+            }
+
             String version = dep.getVersion();
-            Matcher versionMatcher = matchSnapshotRegex.matcher( version );
+            Matcher versionMatcher = matchSnapshotRegex.matcher(version);
             if ( !versionMatcher.matches() )
             {
                 getLog().debug( "Looking for latest snapshot of " + toString( dep ) );
@@ -138,6 +156,8 @@ public class UseLatestSnapshotsMojo
                 {
                     continue;
                 }
+
+                ArtifactVersion selectedVersion = new DefaultArtifactVersion( version );
 
                 ArtifactVersions versions = getHelper().lookupArtifactVersions( artifact, false );
                 final VersionComparator versionComparator = versions.getVersionComparator();
@@ -149,22 +169,45 @@ public class UseLatestSnapshotsMojo
                 }
                 ArtifactVersion upperBound =
                     segment >= 0 ? versionComparator.incrementSegment( lowerBound, segment ) : null;
-                getLog().info( "Upper bound: " + ( upperBound == null ? "none" : upperBound.toString() ) );
+                getLog().info( "Upper bound: " + (upperBound == null ? "none" : upperBound.toString() ) );
                 ArtifactVersion[] newer = versions.getVersions( lowerBound, upperBound, true, false, false );
                 getLog().debug( "Candidate versions " + Arrays.asList( newer ) );
+
                 String latestVersion = null;
+                ArrayList snapshotsOnly = new ArrayList();
+
                 for ( int j = 0; j < newer.length; j++ )
                 {
                     String newVersion = newer[j].toString();
                     if ( matchSnapshotRegex.matcher( newVersion ).matches() )
                     {
-                        latestVersion = newVersion;
+                        snapshotsOnly.add( newer[j] );
                     }
                 }
-                if ( latestVersion != null )
+                getLog().debug("Snapshot Only versions " + snapshotsOnly.toString());
+
+                ArtifactVersion[] filteredVersions = majorMinorIncfilter.filter( selectedVersion,
+                                                                                (ArtifactVersion[]) snapshotsOnly.toArray(
+                                                                                    new ArtifactVersion[snapshotsOnly.size()] ) );
+                getLog().debug( "Filtered versions " + Arrays.asList( filteredVersions ) );
+
+
+                if ( filteredVersions.length > 0 )
                 {
+                    latestVersion = filteredVersions[filteredVersions.length - 1].toString();
+                    if ( getProject().getParent() != null )
+                    {
+                        if ( artifact.getId().equals(getProject().getParentArtifact().getId()) && isProcessingParent() )
+                        {
+                            if ( PomHelper.setProjectParentVersion( pom, latestVersion.toString() ) )
+                            {
+                                getLog().debug( "Made parent update from " + version + " to " + latestVersion.toString() );
+                            }
+                        }
+                    }
+
                     if ( PomHelper.setDependencyVersion( pom, dep.getGroupId(), dep.getArtifactId(), version,
-                                                         latestVersion ) )
+                                                         latestVersion, getProject().getModel() ) )
                     {
                         getLog().info( "Updated " + toString( dep ) + " to version " + latestVersion );
                     }

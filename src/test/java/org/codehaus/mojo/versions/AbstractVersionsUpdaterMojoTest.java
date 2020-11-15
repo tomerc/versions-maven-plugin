@@ -19,9 +19,12 @@ package org.codehaus.mojo.versions;
  * under the License.
  */
 
-import junit.framework.TestCase;
 import org.apache.maven.artifact.versioning.DefaultArtifactVersion;
 import org.codehaus.mojo.versions.ordering.NumericVersionComparator;
+import org.junit.Test;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 /**
  * Basic tests for {@linkplain org.codehaus.mojo.versions.AbstractVersionsUpdaterMojo}.
@@ -29,20 +32,21 @@ import org.codehaus.mojo.versions.ordering.NumericVersionComparator;
  * @author Stephen Connolly
  */
 public class AbstractVersionsUpdaterMojoTest
-    extends TestCase
 {
 
     private NumericVersionComparator instance = new NumericVersionComparator();
 
-    private int instanceCompare(String v1, String v2) {
+    private int instanceCompare( String v1, String v2 )
+    {
         return instance.compare( new DefaultArtifactVersion( v1 ), new DefaultArtifactVersion( v2 ) );
     }
-    
+
     /**
      * Basic test.
      *
      * @throws Exception when the test fails.
      */
+    @Test
     public void testBasic()
         throws Exception
     {

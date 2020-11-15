@@ -28,6 +28,7 @@ import org.apache.maven.artifact.versioning.OverConstrainedVersionException;
 import org.apache.maven.artifact.versioning.VersionRange;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.codehaus.mojo.versions.Property;
+import org.codehaus.mojo.versions.ordering.InvalidSegmentException;
 import org.codehaus.mojo.versions.ordering.VersionComparator;
 
 import java.util.ArrayList;
@@ -73,7 +74,7 @@ public class PropertyVersions
         this.profileId = profileId;
         this.name = name;
         this.helper = helper;
-        this.associations = new TreeSet<ArtifactAssociation>( associations );
+        this.associations = new TreeSet<>( associations );
         this.comparator = new PropertyVersionComparator();
         this.versions = resolveAssociatedVersions( helper, associations, comparator );
 
@@ -82,7 +83,7 @@ public class PropertyVersions
     private static SortedSet<ArtifactVersion> resolveAssociatedVersions( VersionsHelper helper,
                                                                          Set<ArtifactAssociation> associations,
                                                                          VersionComparator versionComparator )
-                                                                             throws ArtifactMetadataRetrievalException
+        throws ArtifactMetadataRetrievalException
     {
         SortedSet<ArtifactVersion> versions = null;
         for ( ArtifactAssociation association : associations )
@@ -115,13 +116,13 @@ public class PropertyVersions
             }
             else
             {
-                versions = new TreeSet<ArtifactVersion>( versionComparator );
+                versions = new TreeSet<>( versionComparator );
                 versions.addAll( Arrays.asList( associatedVersions.getVersions( true ) ) );
             }
         }
         if ( versions == null )
         {
-            versions = new TreeSet<ArtifactVersion>( versionComparator );
+            versions = new TreeSet<>( versionComparator );
         }
         return Collections.unmodifiableSortedSet( versions );
     }
@@ -144,14 +145,13 @@ public class PropertyVersions
 
     private VersionComparator[] lookupComparators()
     {
-        Set result = new HashSet();
-        Iterator i = associations.iterator();
+        Set<VersionComparator> result = new HashSet();
+        Iterator<ArtifactAssociation> i = associations.iterator();
         while ( i.hasNext() )
         {
-            ArtifactAssociation association = (ArtifactAssociation) i.next();
-            result.add( helper.getVersionComparator( association.getArtifact() ) );
+            result.add( helper.getVersionComparator( i.next().getArtifact() ) );
         }
-        return (VersionComparator[]) result.toArray( new VersionComparator[result.size()] );
+        return result.toArray( new VersionComparator[result.size()] );
     }
 
     /**
@@ -167,7 +167,7 @@ public class PropertyVersions
     public ArtifactVersion[] getVersions( Collection<Artifact> artifacts )
         throws MojoExecutionException
     {
-        List<ArtifactVersion> result = new ArrayList<ArtifactVersion>();
+        List<ArtifactVersion> result = new ArrayList<>();
         // go through all the associations
         // see if they are met from the collection
         // add the version if they are
@@ -241,7 +241,7 @@ public class PropertyVersions
         }
         else
         {
-            result = new TreeSet<ArtifactVersion>( getVersionComparator() );
+            result = new TreeSet<>( getVersionComparator() );
             for ( ArtifactVersion candidate : versions )
             {
                 if ( ArtifactUtils.isSnapshot( candidate.toString() ) )
@@ -308,11 +308,20 @@ public class PropertyVersions
             + '\'' + ", associations=" + associations + '}';
     }
 
-    public ArtifactVersion getNewestVersion( String currentVersion, Property property, Boolean allowSnapshots,
+    public ArtifactVersion getNewestVersion( String currentVersion, Property property, boolean allowSnapshots,
                                              List reactorProjects, VersionsHelper helper )
-                                                 throws MojoExecutionException
+        throws MojoExecutionException
     {
-        final boolean includeSnapshots = !property.isBanSnapshots() && Boolean.TRUE.equals( allowSnapshots );
+        return getNewestVersion( currentVersion, property, allowSnapshots, reactorProjects, helper, false, -1 );
+    }
+
+    public ArtifactVersion getNewestVersion( String currentVersion, Property property, boolean allowSnapshots,
+                                             List reactorProjects, VersionsHelper helper, boolean allowDowngrade,
+                                             int segment )
+        throws MojoExecutionException
+    {
+        final boolean includeSnapshots = !property.isBanSnapshots() && allowSnapshots;
+        helper.getLog().debug( "getNewestVersion(): includeSnapshots='" + includeSnapshots + "'" );
         helper.getLog().debug( "Property ${" + property.getName() + "}: Set of valid available versions is "
             + Arrays.asList( getVersions( includeSnapshots ) ) );
         VersionRange range;
@@ -333,9 +342,31 @@ public class PropertyVersions
         {
             throw new MojoExecutionException( e.getMessage(), e );
         }
-        ArtifactVersion result = getNewestVersion( range, includeSnapshots ? 
-                                   helper.createArtifactVersion( currentVersion ) : null, null, includeSnapshots, false,
-                                   true );
+
+        ArtifactVersion lowerBoundArtifactVersion = null;
+        if ( allowDowngrade )
+        {
+            if ( segment != -1 )
+            {
+                lowerBoundArtifactVersion = getLowerBound(helper, currentVersion, segment);
+            }
+            helper.getLog().debug( "lowerBoundArtifactVersion is null based on allowDowngrade:" + allowDowngrade );
+        }
+        else
+        {
+            lowerBoundArtifactVersion = helper.createArtifactVersion( currentVersion );
+            helper.getLog().debug( "lowerBoundArtifactVersion: " + lowerBoundArtifactVersion.toString() );
+        }
+
+        ArtifactVersion upperBound = null;
+        if ( segment != -1 )
+        {
+            upperBound = getVersionComparator().incrementSegment( lowerBoundArtifactVersion, segment );
+            helper.getLog().debug( "Property ${" + property.getName() + "}: upperBound is: " + upperBound );
+        }
+        ArtifactVersion result =
+            getNewestVersion( range, lowerBoundArtifactVersion, upperBound, includeSnapshots, false, false );
+
         helper.getLog().debug( "Property ${" + property.getName() + "}: Current winner is: " + result );
 
         if ( property.isSearchReactor() )
@@ -388,6 +419,18 @@ public class PropertyVersions
             }
         }
         return result;
+    }
+
+    private ArtifactVersion getNewestVersion( String currentVersion, VersionsHelper helper, int segment,
+                                              boolean includeSnapshots, VersionRange range )
+    {
+        ArtifactVersion lowerBound = helper.createArtifactVersion( currentVersion );
+        ArtifactVersion upperBound = null;
+        if ( segment != -1 )
+        {
+            upperBound = getVersionComparator().incrementSegment( lowerBound, segment );
+        }
+        return getNewestVersion( range, lowerBound, upperBound, includeSnapshots, false, false );
     }
 
     private final class PropertyVersionComparator
@@ -469,6 +512,45 @@ public class PropertyVersions
             return result;
         }
 
+    }
+
+
+    private ArtifactVersion getLowerBound(VersionsHelper helper,
+            String currentVersion, int segment)
+    {
+        ArtifactVersion version = helper.createArtifactVersion(currentVersion);
+        int segmentCount = getVersionComparator().getSegmentCount(version);
+        if (segment < 0 || segment > segmentCount)
+        {
+            throw new InvalidSegmentException(segment, segmentCount,
+                    currentVersion);
+        }
+
+        StringBuilder newVersion = new StringBuilder();
+        newVersion.append(segment >= 0 ? version.getMajorVersion() : 0);
+        if (segmentCount > 0)
+        {
+            newVersion.append(".")
+                    .append(segment >= 1 ? version.getMinorVersion() : 0);
+        }
+        if (segmentCount > 1)
+        {
+            newVersion.append(".")
+                    .append(segment >= 2 ? version.getIncrementalVersion() : 0);
+        }
+        if (segmentCount > 2)
+        {
+            if (version.getQualifier() != null)
+            {
+                newVersion.append("-")
+                        .append(segment >= 3 ? version.getQualifier() : "0");
+            } else
+            {
+                newVersion.append("-")
+                        .append(segment >= 3 ? version.getBuildNumber() : "0");
+            }
+        }
+        return helper.createArtifactVersion(newVersion.toString());
     }
 
 }

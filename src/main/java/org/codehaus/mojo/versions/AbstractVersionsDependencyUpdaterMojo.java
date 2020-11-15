@@ -25,12 +25,14 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.resolver.filter.ArtifactFilter;
 import org.apache.maven.artifact.versioning.InvalidVersionSpecificationException;
 import org.apache.maven.model.Dependency;
+import org.apache.maven.model.Parent;
 import org.apache.maven.plugin.MojoExecutionException;
+import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.shared.artifact.filter.PatternExcludesArtifactFilter;
 import org.apache.maven.shared.artifact.filter.PatternIncludesArtifactFilter;
@@ -56,9 +58,9 @@ public abstract class AbstractVersionsDependencyUpdaterMojo
      * line. When specifying includes from the pom, use the {@link #includes} configuration instead. If this property is
      * specified then the {@link # include} configuration is ignored.
      *
-     * @parameter property="includes"
      * @since 1.0-beta-1
      */
+    @Parameter( property = "includes" )
     private String includesList = null;
 
     /**
@@ -67,52 +69,52 @@ public abstract class AbstractVersionsDependencyUpdaterMojo
      * line. When specifying excludes from the pom, use the {@link #excludes} configuration instead. If this property is
      * specified then the {@link # exclude} configuration is ignored.
      *
-     * @parameter property="excludes"
      * @since 1.0-beta-1
      */
+    @Parameter( property = "excludes" )
     private String excludesList = null;
 
     /**
      * A list of artifact patterns to include. Follows the pattern "groupId:artifactId:type:classifier:version". This
      * configuration setting is ignored if {@link #includesList} is defined.
      *
-     * @parameter
      * @since 1.0-beta-1
      */
+    @Parameter
     private String[] includes = null;
 
     /**
      * A list of artifact patterns to exclude. Follows the pattern "groupId:artifactId:type:classifier:version". This
      * configuration setting is ignored if {@link #excludesList} is defined.
      *
-     * @parameter
      * @since 1.0-beta-1
      */
+    @Parameter
     private String[] excludes = null;
 
     /**
-     * Whether to process the dependencies section of the project. If not set will default to true.
+     * Whether to process the dependencies section of the project.
      *
-     * @parameter property="processDependencies" defaultValue="true"
      * @since 1.0-alpha-3
      */
-    private Boolean processDependencies;
+    @Parameter( property = "processDependencies", defaultValue = "true" )
+    private boolean processDependencies;
 
     /**
-     * Whether to process the dependencyManagement section of the project. If not set will default to true.
+     * Whether to process the dependencyManagement section of the project.
      *
-     * @parameter property="processDependencyManagement" defaultValue="true"
      * @since 1.0-alpha-3
      */
-    private Boolean processDependencyManagement;
+    @Parameter( property = "processDependencyManagement", defaultValue = "true" )
+    private boolean processDependencyManagement;
 
     /**
      * Whether to process the parent section of the project. If not set will default to false.
      *
-     * @parameter property="processParent" defaultValue="false"
      * @since 2.3
      */
-    private Boolean processParent = false;
+    @Parameter( property = "processParent", defaultValue = "false" )
+    private boolean processParent = false;
 
     /**
      * Artifact filter to determine if artifact should be included
@@ -131,64 +133,72 @@ public abstract class AbstractVersionsDependencyUpdaterMojo
     /**
      * Whether to skip processing dependencies that are produced as part of the current reactor.
      *
-     * @parameter property="excludeReactor" defaultValue="true"
      * @since 1.0-alpha-3
      */
-    private Boolean excludeReactor;
+    @Parameter( property = "excludeReactor", defaultValue = "true" )
+    private boolean excludeReactor;
 
     /**
      * Should the project/dependencies section of the pom be processed.
      *
-     * @return returns <code>true if the project/dependencies section of the pom should be processed.
+     * @return returns <code>true</code> if the project/dependencies section of the pom should be processed.
      * @since 1.0-alpha-3
      */
     public boolean isProcessingDependencies()
     {
-        // true if true or null
-        return !Boolean.FALSE.equals( processDependencies );
+        return processDependencies;
     }
 
     /**
      * Should the project/dependencyManagement section of the pom be processed.
      *
-     * @return returns <code>true if the project/dependencyManagement section of the pom should be processed.
+     * @return returns <code>true</code> if the project/dependencyManagement section of the pom should be processed.
      * @since 1.0-alpha-3
      */
     public boolean isProcessingDependencyManagement()
     {
-        // true if true or null
-        return !Boolean.FALSE.equals( processDependencyManagement );
+        return processDependencyManagement;
     }
 
     /**
      * Should the project/parent section of the pom be processed.
      *
-     * @return returns <code>true if the project/parent section of the pom should be processed.
+     * @return returns <code>true</code> if the project/parent section of the pom should be processed.
      * @since 2.3
      */
     public boolean isProcessingParent()
     {
-        // true if true or null
-        return !Boolean.FALSE.equals( processParent );
+        return processParent;
     }
 
     /**
      * Should the artifacts produced in the current reactor be excluded from processing.
      *
-     * @return returns <code>true if the artifacts produced in the current reactor should be excluded from processing.
+     * @return returns <code>true</code> if the artifacts produced in the current reactor should be excluded from processing.
      * @since 1.0-alpha-3
      */
     public boolean isExcludeReactor()
     {
-        // true if true or null
-        return !Boolean.FALSE.equals( excludeReactor );
+        return excludeReactor;
     }
+
+    /**
+     * Should the dependency be updated itself or is it handled by properties.
+     * 
+     * @param dependency Dependency
+     * @return true if the version starts with '${'
+     * @since 2.8
+     */
+    protected boolean isHandledByProperty(Dependency dependency) {
+		String version = dependency.getVersion();
+		return version.startsWith("${");
+	}
 
     /**
      * Try to find the dependency artifact that matches the given dependency.
      *
-     * @param dependency
-     * @return
+     * @param dependency Dependency
+     * @return Artifact
      * @since 1.0-alpha-3
      */
     protected Artifact findArtifact( Dependency dependency )
@@ -197,7 +207,7 @@ public abstract class AbstractVersionsDependencyUpdaterMojo
         {
             return null;
         }
-        Iterator iter = getProject().getDependencyArtifacts().iterator();
+        Iterator<?> iter = getProject().getDependencyArtifacts().iterator();
         while ( iter.hasNext() )
         {
             Artifact artifact = (Artifact) iter.next();
@@ -212,8 +222,9 @@ public abstract class AbstractVersionsDependencyUpdaterMojo
     /**
      * Try to find the dependency artifact that matches the given dependency.
      *
-     * @param dependency
-     * @return
+     * @param dependency Dependency
+     * @throws MojoExecutionException Mojo execution exception
+     * @return Artifact
      * @since 1.0-alpha-3
      */
     protected Artifact toArtifact( Dependency dependency )
@@ -232,6 +243,35 @@ public abstract class AbstractVersionsDependencyUpdaterMojo
             }
         }
         return artifact;
+    }
+
+    protected Artifact toArtifact( Parent model )
+        throws MojoExecutionException
+    {
+        Dependency d = new Dependency();
+        d.setArtifactId( model.getArtifactId() );
+        d.setGroupId( model.getGroupId() );
+        d.setVersion( model.getVersion() );
+        d.setType( "pom" );
+        d.setScope( Artifact.SCOPE_COMPILE );
+        return this.toArtifact( d );
+    }
+
+    protected String toString( MavenProject project )
+    {
+        StringBuilder buf = new StringBuilder();
+
+        buf.append( project.getGroupId() );
+        buf.append( ':' );
+        buf.append( project.getArtifactId() );
+
+        if ( project.getVersion() != null && project.getVersion().length() > 0 )
+        {
+            buf.append( ":" );
+            buf.append( project.getVersion() );
+        }
+
+        return buf.toString();
     }
 
     protected String toString( Dependency d )
@@ -271,12 +311,9 @@ public abstract class AbstractVersionsDependencyUpdaterMojo
      */
     protected boolean isProducedByReactor( Dependency dependency )
     {
-        Iterator iter = reactorProjects.iterator();
-        while ( iter.hasNext() )
-        {
-            MavenProject project = (MavenProject) iter.next();
-            if ( compare( project, dependency ) )
-            {
+        for ( Object reactorProject : reactorProjects ) {
+            MavenProject project = (MavenProject) reactorProject;
+            if ( compare(project, dependency) ) {
                 return true;
             }
         }
@@ -308,8 +345,8 @@ public abstract class AbstractVersionsDependencyUpdaterMojo
      * Compare and artifact to a dependency. Returns true only if the groupId, artifactId, type, and classifier are all
      * equal.
      *
-     * @param artifact
-     * @param dep
+     * @param artifact Artifact
+     * @param dep Dependency
      * @return true if artifact and dep refer to the same artifact
      */
     private boolean compare( Artifact artifact, Dependency dep )
@@ -359,20 +396,22 @@ public abstract class AbstractVersionsDependencyUpdaterMojo
 
         return result;
     }
-    
+
     /**
      * Indicates whether any includes were specified via the 'includes' or 'includesList' options.
+     * 
      * @return true if includes were specified, false otherwise.
      */
-    protected boolean hasIncludes() {
-    	return includes != null || includesList != null;
+    protected boolean hasIncludes()
+    {
+        return includes != null || includesList != null;
     }
 
     private ArtifactFilter getIncludesArtifactFilter()
     {
         if ( includesFilter == null && ( includes != null || includesList != null ) )
         {
-            List patterns = new ArrayList();
+            List<String> patterns = new ArrayList<>();
             if ( this.includesList != null )
             {
                 patterns.addAll( separatePatterns( includesList ) );
@@ -390,7 +429,7 @@ public abstract class AbstractVersionsDependencyUpdaterMojo
     {
         if ( excludesFilter == null && ( excludes != null || excludesList != null ) )
         {
-            List patterns = new ArrayList();
+            List<String> patterns = new ArrayList<>();
             if ( excludesList != null )
             {
                 patterns.addAll( separatePatterns( excludesList ) );
@@ -411,14 +450,14 @@ public abstract class AbstractVersionsDependencyUpdaterMojo
      * @param includeString the string to parse
      * @return list of patterns
      */
-    protected List separatePatterns( String includeString )
+    protected List<String> separatePatterns( String includeString )
     {
         if ( includeString == null )
         {
-            return Collections.EMPTY_LIST;
+            return Collections.emptyList();
         }
 
-        List patterns = new ArrayList();
+        List<String> patterns = new ArrayList<>();
         int indexOf = nextCommaIndex( includeString );
         while ( indexOf >= 0 )
         {

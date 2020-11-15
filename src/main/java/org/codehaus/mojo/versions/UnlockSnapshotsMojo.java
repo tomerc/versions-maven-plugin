@@ -23,12 +23,12 @@ import org.apache.maven.artifact.Artifact;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
+import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.project.MavenProject;
 import org.codehaus.mojo.versions.api.PomHelper;
 import org.codehaus.mojo.versions.rewriting.ModifiedPomXMLEventReader;
 
 import javax.xml.stream.XMLStreamException;
-import java.util.Iterator;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -40,11 +40,9 @@ import java.util.regex.Pattern;
  * dependency is only available in the local repository and not in a remote snapshot repository.
  *
  * @author Paul Gier
- * @goal unlock-snapshots
- * @requiresProject true
- * @requiresDirectInvocation true
  * @since 1.0-alpha-3
  */
+@Mojo( name = "unlock-snapshots", requiresProject = true, requiresDirectInvocation = true, threadSafe = true )
 public class UnlockSnapshotsMojo
     extends AbstractVersionsDependencyUpdaterMojo
 {
@@ -73,27 +71,30 @@ public class UnlockSnapshotsMojo
         {
             unlockSnapshots( pom, getProject().getDependencyManagement().getDependencies() );
         }
-        if ( isProcessingDependencies() )
+        if ( getProject().getDependencies() != null && isProcessingDependencies() )
         {
             unlockSnapshots( pom, getProject().getDependencies() );
         }
-        if ( isProcessingParent() )
+        if ( getProject().getParent() != null && isProcessingParent() )
         {
             unlockParentSnapshot( pom, getProject().getParent() );
         }
     }
 
-    private void unlockSnapshots( ModifiedPomXMLEventReader pom, List dependencies )
+    private void unlockSnapshots( ModifiedPomXMLEventReader pom, List<Dependency> dependencies )
         throws XMLStreamException, MojoExecutionException
     {
-        Iterator iter = dependencies.iterator();
-        while ( iter.hasNext() )
+        for ( Dependency dep : dependencies )
         {
-            Dependency dep = (Dependency) iter.next();
-
             if ( isExcludeReactor() && isProducedByReactor( dep ) )
             {
                 getLog().info( "Ignoring reactor dependency: " + toString( dep ) );
+                continue;
+            }
+
+            if ( isHandledByProperty( dep ) )
+            {
+                getLog().debug( "Ignoring dependency with property as version: " + toString( dep ) );
                 continue;
             }
 
@@ -108,7 +109,7 @@ public class UnlockSnapshotsMojo
             {
                 String unlockedVersion = versionMatcher.replaceFirst( "-SNAPSHOT" );
                 if ( PomHelper.setDependencyVersion( pom, dep.getGroupId(), dep.getArtifactId(), dep.getVersion(),
-                                                     unlockedVersion ) )
+                                                     unlockedVersion, getProject().getModel() ) )
                 {
                     getLog().info( "Unlocked " + toString( dep ) + " to version " + unlockedVersion );
                 }

@@ -19,27 +19,29 @@ package org.codehaus.mojo.versions;
  * under the License.
  */
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeSet;
+
+import javax.xml.stream.XMLStreamException;
+
 import org.apache.maven.artifact.metadata.ArtifactMetadataRetrievalException;
 import org.apache.maven.artifact.versioning.ArtifactVersion;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
+import org.apache.maven.plugins.annotations.Mojo;
+import org.apache.maven.plugins.annotations.Parameter;
 import org.codehaus.mojo.versions.api.PropertyVersions;
 import org.codehaus.mojo.versions.rewriting.ModifiedPomXMLEventReader;
-
-import javax.xml.stream.XMLStreamException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
 
 /**
  * Displays properties that are linked to artifact versions and have updates available.
  *
  * @author Stephen Connolly
- * @goal display-property-updates
- * @requiresProject true
- * @requiresDirectInvocation true
  * @since 1.0-beta-1
  */
+@Mojo( name = "display-property-updates", requiresProject = true, requiresDirectInvocation = true, threadSafe = true )
 public class DisplayPropertyUpdatesMojo
     extends AbstractVersionsDisplayMojo
 {
@@ -56,17 +58,17 @@ public class DisplayPropertyUpdatesMojo
     /**
      * Any restrictions that apply to specific properties.
      *
-     * @parameter
      * @since 1.0-alpha-3
      */
+    @Parameter
     private Property[] properties;
 
     /**
      * A comma separated list of properties to update.
      *
-     * @parameter property="includeProperties"
      * @since 1.0-alpha-1
      */
+    @Parameter( property = "includeProperties" )
     private String includeProperties = null;
 
     /**
@@ -75,15 +77,40 @@ public class DisplayPropertyUpdatesMojo
      * @parameter property="excludeProperties"
      * @since 1.0-alpha-1
      */
+    @Parameter( property = "excludeProperties" )
     private String excludeProperties = null;
 
     /**
      * Whether properties linking versions should be auto-detected or not.
      *
-     * @parameter property="autoLinkItems" defaultValue="true"
      * @since 1.0-alpha-2
      */
-    private Boolean autoLinkItems;
+    @Parameter( property = "autoLinkItems", defaultValue = "true" )
+    private boolean autoLinkItems;
+
+    /**
+     * Whether to allow the major version number to be changed.
+     *
+     * @since 2.5
+     */
+    @Parameter( property = "allowMajorUpdates", defaultValue = "true" )
+    private boolean allowMajorUpdates;
+
+    /**
+     * Whether to allow the minor version number to be changed.
+     *
+     * @since 2.5
+     */
+    @Parameter( property = "allowMinorUpdates", defaultValue = "true" )
+    private boolean allowMinorUpdates;
+
+    /**
+     * Whether to allow the incremental version number to be changed.
+     *
+     * @since 2.5
+     */
+    @Parameter( property = "allowIncrementalUpdates", defaultValue = "true" )
+    private boolean allowIncrementalUpdates;
 
     // -------------------------- STATIC METHODS --------------------------
 
@@ -93,12 +120,12 @@ public class DisplayPropertyUpdatesMojo
         throws MojoExecutionException, MojoFailureException
     {
         logInit();
-        List<String> current = new ArrayList<String>();
-        List<String> updates = new ArrayList<String>();
+        List<String> current = new ArrayList<>();
+        List<String> updates = new ArrayList<>();
 
         Map<Property, PropertyVersions> propertyVersions =
             this.getHelper().getVersionPropertiesMap( getProject(), properties, includeProperties, excludeProperties,
-                                                      !Boolean.FALSE.equals( autoLinkItems ) );
+                                                      autoLinkItems );
         for ( Map.Entry<Property, PropertyVersions> entry : propertyVersions.entrySet() )
         {
             Property property = entry.getKey();
@@ -110,8 +137,9 @@ public class DisplayPropertyUpdatesMojo
                 continue;
             }
 
+            int segment = determineUnchangedSegment( allowMajorUpdates, allowMinorUpdates, allowIncrementalUpdates );
             ArtifactVersion winner = version.getNewestVersion( currentVersion, property, this.allowSnapshots,
-                                                               this.reactorProjects, this.getHelper() );
+                                                               this.reactorProjects, this.getHelper(), false, segment );
 
             if ( winner != null && !currentVersion.equals( winner.toString() ) )
             {
@@ -153,7 +181,7 @@ public class DisplayPropertyUpdatesMojo
         if ( !current.isEmpty() )
         {
             logLine( false, "The following version properties are referencing the newest available version:" );
-            for ( String s : current )
+            for ( String s : new TreeSet<>(current) )
             {
                 logLine( false, "  " + s );
             }
@@ -170,7 +198,7 @@ public class DisplayPropertyUpdatesMojo
         if ( !updates.isEmpty() )
         {
             logLine( false, "The following version property updates are available:" );
-            for ( String update : updates )
+            for ( String update : new TreeSet<>(updates) )
             {
                 logLine( false, "  " + update );
             }

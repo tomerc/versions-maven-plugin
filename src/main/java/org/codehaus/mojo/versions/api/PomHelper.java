@@ -52,6 +52,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.Reader;
 import java.io.StringReader;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Enumeration;
@@ -102,25 +103,13 @@ public class PomHelper
     public static Model getRawModel( File moduleProjectFile )
         throws IOException
     {
-        FileInputStream input = null;
-        try
+        try (FileInputStream input = new FileInputStream( moduleProjectFile ))
         {
-            input = new FileInputStream( moduleProjectFile );
-            MavenXpp3Reader reader = new MavenXpp3Reader();
-            return reader.read( input );
+            return new MavenXpp3Reader().read( input );
         }
         catch ( XmlPullParserException e )
         {
-            IOException ioe = new IOException( e.getMessage() );
-            ioe.initCause( e );
-            throw ioe;
-        }
-        finally
-        {
-            if ( input != null )
-            {
-                input.close();
-            }
+            throw new IOException( e.getMessage(), e );
         }
     }
 
@@ -134,25 +123,13 @@ public class PomHelper
     public static Model getRawModel( ModifiedPomXMLEventReader modifiedPomXMLEventReader )
         throws IOException
     {
-        StringReader stringReader = null;
-        try
+        try (StringReader stringReader = new StringReader( modifiedPomXMLEventReader.asStringBuilder().toString() ))
         {
-            stringReader = new StringReader( modifiedPomXMLEventReader.asStringBuilder().toString() );
-            MavenXpp3Reader reader = new MavenXpp3Reader();
-            return reader.read( stringReader );
+            return new MavenXpp3Reader().read( stringReader );
         }
         catch ( XmlPullParserException e )
         {
-            IOException ioe = new IOException( e.getMessage() );
-            ioe.initCause( e );
-            throw ioe;
-        }
-        finally
-        {
-            if ( stringReader != null )
-            {
-                stringReader.close();
-            }
+            throw new IOException( e.getMessage(), e );
         }
     }
 
@@ -168,7 +145,7 @@ public class PomHelper
      */
     public static boolean setPropertyVersion( final ModifiedPomXMLEventReader pom, final String profileId,
                                               final String property, final String value )
-                                                  throws XMLStreamException
+        throws XMLStreamException
     {
         Stack<String> stack = new Stack<String>();
         String path = "";
@@ -254,11 +231,26 @@ public class PomHelper
     public static boolean setProjectVersion( final ModifiedPomXMLEventReader pom, final String value )
         throws XMLStreamException
     {
+        return setProjectValue( pom, "/project/version", value );
+    }
+
+    /**
+     * Searches the pom re-defining a project value using the given pattern.
+     *
+     * @param pom The pom to modify.
+     * @param pattern The pattern to look for.
+     * @param value The new value of the property.
+     * @return <code>true</code> if a replacement was made.
+     * @throws XMLStreamException if something went wrong.
+     */
+    public static boolean setProjectValue( final ModifiedPomXMLEventReader pom, String pattern, final String value )
+        throws XMLStreamException
+    {
         Stack<String> stack = new Stack<String>();
         String path = "";
         final Pattern matchScopeRegex;
         boolean madeReplacement = false;
-        matchScopeRegex = Pattern.compile( "/project/version" );
+        matchScopeRegex = Pattern.compile( pattern );
 
         pom.rewind();
 
@@ -404,7 +396,7 @@ public class PomHelper
     public static Artifact getProjectParent( final ModifiedPomXMLEventReader pom, VersionsHelper helper )
         throws XMLStreamException
     {
-        Stack<String> stack = new Stack<String>();
+        Stack<String> stack = new Stack<>();
         String path = "";
         final Pattern matchScopeRegex = Pattern.compile( "/project/parent((/groupId)|(/artifactId)|(/version))" );
         String groupId = null;
@@ -462,13 +454,14 @@ public class PomHelper
      * @param artifactId The artifactId of the dependency.
      * @param oldVersion The old version of the dependency.
      * @param newVersion The new version of the dependency.
+     * @param model The model to get the project properties from.
      * @return <code>true</code> if a replacement was made.
-     * @throws XMLStreamException if somethinh went wrong.
+     * @throws XMLStreamException if something went wrong.
      */
     public static boolean setDependencyVersion( final ModifiedPomXMLEventReader pom, final String groupId,
                                                 final String artifactId, final String oldVersion,
-                                                final String newVersion )
-                                                    throws XMLStreamException
+                                                final String newVersion, final Model model )
+        throws XMLStreamException
     {
         Stack<String> stack = new Stack<String>();
         String path = "";
@@ -478,6 +471,11 @@ public class PomHelper
                                                         "/project/parent/version", "/project/groupId",
                                                         "/project/artifactId", "/project/version" ) );
         Map<String, String> implicitProperties = new HashMap<String, String>();
+
+        for ( Map.Entry<Object, Object> entry : model.getProperties().entrySet() )
+        {
+            implicitProperties.put( (String) entry.getKey(), (String) entry.getValue() );
+        }
 
         pom.rewind();
 
@@ -525,7 +523,7 @@ public class PomHelper
             }
         }
 
-        stack = new Stack<String>();
+        stack = new Stack<>();
         path = "";
         boolean inMatchScope = false;
         boolean madeReplacement = false;
@@ -766,9 +764,9 @@ public class PomHelper
      */
     public static boolean setPluginVersion( final ModifiedPomXMLEventReader pom, final String groupId,
                                             final String artifactId, final String oldVersion, final String newVersion )
-                                                throws XMLStreamException
+        throws XMLStreamException
     {
-        Stack<String> stack = new Stack<String>();
+        Stack<String> stack = new Stack<>();
         String path = "";
         final Pattern matchScopeRegex;
         final Pattern matchTargetRegex;
@@ -881,7 +879,7 @@ public class PomHelper
         Model model = getRawModel( project );
         Map<String, PropertyVersionsBuilder> result = new TreeMap<String, PropertyVersionsBuilder>();
 
-        Set<String> activeProfiles = new TreeSet<String>();
+        Set<String> activeProfiles = new TreeSet<>();
         for ( Profile profile : (List<Profile>) project.getActiveProfiles() )
         {
             activeProfiles.add( profile.getId() );
@@ -984,7 +982,7 @@ public class PomHelper
      */
     private static void addPluginAssociations( VersionsHelper helper, ExpressionEvaluator expressionEvaluator,
                                                Map<String, PropertyVersionsBuilder> result, List<Plugin> plugins )
-                                                   throws ExpressionEvaluationException
+        throws ExpressionEvaluationException
     {
         if ( plugins == null )
         {
@@ -1041,7 +1039,7 @@ public class PomHelper
     private static void addReportPluginAssociations( VersionsHelper helper, ExpressionEvaluator expressionEvaluator,
                                                      Map<String, PropertyVersionsBuilder> result,
                                                      List<ReportPlugin> reportPlugins )
-                                                         throws ExpressionEvaluationException
+        throws ExpressionEvaluationException
     {
         if ( reportPlugins == null )
         {
@@ -1097,7 +1095,7 @@ public class PomHelper
     private static void addDependencyAssocations( VersionsHelper helper, ExpressionEvaluator expressionEvaluator,
                                                   Map<String, PropertyVersionsBuilder> result,
                                                   List<Dependency> dependencies, boolean usePluginRepositories )
-                                                      throws ExpressionEvaluationException
+        throws ExpressionEvaluationException
     {
         if ( dependencies == null )
         {
@@ -1379,55 +1377,6 @@ public class PomHelper
     }
 
     /**
-     * Finds the local root of the specified project.
-     *
-     * @param project The project to find the local root for.
-     * @param localRepository the local repo.
-     * @param globalProfileManager the global profile manager.
-     * @param logger The logger to log to.
-     * @return The local root (note this may be the project passed as an argument).
-     */
-    public static MavenProject getLocalRoot( MavenProjectBuilder builder, MavenProject project,
-                                             ArtifactRepository localRepository, ProfileManager globalProfileManager,
-                                             Log logger )
-    {
-        logger.info( "Searching for local aggregator root..." );
-        while ( true )
-        {
-            final File parentDir = project.getBasedir().getParentFile();
-            if ( parentDir.isDirectory() )
-            {
-                logger.debug( "Checking to see if " + parentDir + " is an aggregator parent" );
-                File parent = new File( parentDir, "pom.xml" );
-                if ( parent.isFile() )
-                {
-                    try
-                    {
-                        final MavenProject parentProject =
-                            builder.build( parent, localRepository, globalProfileManager );
-                        if ( getAllChildModules( parentProject, logger ).contains( project.getBasedir().getName() ) )
-                        {
-                            logger.debug( parentDir + " is an aggregator parent" );
-                            project = parentProject;
-                            continue;
-                        }
-                        else
-                        {
-                            logger.debug( parentDir + " is not an aggregator parent" );
-                        }
-                    }
-                    catch ( ProjectBuildingException e )
-                    {
-                        logger.warn( e );
-                    }
-                }
-            }
-            logger.debug( "Local aggregation root is " + project.getBasedir() );
-            return project;
-        }
-    }
-
-    /**
      * Builds a map of raw models keyed by module path.
      *
      * @param project The project to build from.
@@ -1438,7 +1387,7 @@ public class PomHelper
     public static Map<String, Model> getReactorModels( MavenProject project, Log logger )
         throws IOException
     {
-        Map<String, Model> result = new LinkedHashMap<String, Model>();
+        Map<String, Model> result = new LinkedHashMap<>();
         final Model model = getRawModel( project );
         final String path = "";
         result.put( path, model );
@@ -1463,8 +1412,8 @@ public class PomHelper
         {
             path += '/';
         }
-        Map<String, Model> result = new LinkedHashMap<String, Model>();
-        Map<String, Model> childResults = new LinkedHashMap<String, Model>();
+        Map<String, Model> result = new LinkedHashMap<>();
+        Map<String, Model> childResults = new LinkedHashMap<>();
 
         File baseDir = path.length() > 0 ? new File( project.getBasedir(), path ) : project.getBasedir();
 
@@ -1603,15 +1552,9 @@ public class PomHelper
     public static StringBuilder readXmlFile( File outFile )
         throws IOException
     {
-        Reader reader = ReaderFactory.newXmlReader( outFile );
-
-        try
+        try( Reader reader = ReaderFactory.newXmlReader( outFile ) )
         {
             return new StringBuilder( IOUtil.toString( reader ) );
-        }
-        finally
-        {
-            IOUtil.close( reader );
         }
     }
 
@@ -1624,5 +1567,78 @@ public class PomHelper
     public static String getGAV( Model model )
     {
         return getGroupId( model ) + ":" + getArtifactId( model ) + ":" + getVersion( model );
+    }
+
+    /**
+     * Reads imported POMs from the dependency management section.
+     *
+     * @param pom POM
+     * @return a non-null list of {@link Dependency} for each imported POM
+     * @throws XMLStreamException XML stream exception
+     * @see <a href="https://github.com/mojohaus/versions-maven-plugin/issues/134">bug #134</a>
+     * @since 2.4
+     */
+    public static List<Dependency> readImportedPOMsFromDependencyManagementSection( ModifiedPomXMLEventReader pom )
+        throws XMLStreamException
+    {
+        List<Dependency> importedPOMs = new ArrayList<Dependency>();
+        Stack<String> stack = new Stack<String>();
+
+        String groupIdElement = "groupId";
+        String artifactIdElement = "artifactId";
+        String versionElement = "version";
+        String typeElement = "type";
+        String scopeElement = "scope";
+        Set<String> recognizedElements =
+            new HashSet<>( Arrays.asList( groupIdElement, artifactIdElement, versionElement, typeElement,
+                                                scopeElement ) );
+        Map<String, String> depData = new HashMap<>();
+
+        pom.rewind();
+
+        String depMgmtDependencyPath = "/project/dependencyManagement/dependencies/dependency";
+
+        while ( pom.hasNext() )
+        {
+            XMLEvent event = pom.nextEvent();
+
+            if ( event.isStartElement() )
+            {
+                final String elementName = event.asStartElement().getName().getLocalPart();
+                String parent = "";
+                if ( !stack.isEmpty() )
+                {
+                    parent = stack.peek();
+                }
+                String currentPath = parent + "/" + elementName;
+                stack.push( currentPath );
+
+                if ( currentPath.startsWith( depMgmtDependencyPath ) && recognizedElements.contains( elementName ) )
+                {
+                    final String elementText = pom.getElementText().trim();
+                    depData.put( elementName, elementText );
+                    stack.pop();
+                }
+            }
+            if ( event.isEndElement() )
+            {
+                String path = stack.pop();
+                if ( depMgmtDependencyPath.equals( path ) )
+                {
+                    if ( "pom".equals( depData.get( typeElement ) ) && "import".equals( depData.get( scopeElement ) ) )
+                    {
+                        Dependency dependency = new Dependency();
+                        dependency.setGroupId( depData.get( groupIdElement ) );
+                        dependency.setArtifactId( depData.get( artifactIdElement ) );
+                        dependency.setVersion( depData.get( versionElement ) );
+                        dependency.setType( depData.get( typeElement ) );
+                        dependency.setScope( depData.get( scopeElement ) );
+                        importedPOMs.add( dependency );
+                    }
+                    depData.clear();
+                }
+            }
+        }
+        return importedPOMs;
     }
 }

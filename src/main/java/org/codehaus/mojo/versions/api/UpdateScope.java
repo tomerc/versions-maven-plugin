@@ -24,6 +24,7 @@ import java.io.Serializable;
 import java.io.StreamCorruptedException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 import org.apache.maven.artifact.metadata.ArtifactMetadataRetrievalException;
 import org.apache.maven.artifact.versioning.ArtifactVersion;
@@ -33,7 +34,7 @@ import org.codehaus.mojo.versions.ordering.VersionComparator;
  * Scopes of version updates.
  *
  * @author Stephen Connolly
- * @todo convert this class to a Java 1.5 enum once we move to Java 1.5
+ * todo: convert this class to a Java 1.5 enum once we move to Java 1.5
  * @since 1.0-beta-1
  */
 public abstract class UpdateScope
@@ -45,7 +46,7 @@ public abstract class UpdateScope
      *
      * @since 1.0-beta-1
      */
-    public static final UpdateScope SUBINCREMENTAL = new UpdateScope( "SUBINCREMENTAL", 0)
+    public static final UpdateScope SUBINCREMENTAL = new UpdateScope( "SUBINCREMENTAL", 0 )
     {
         /** {@inheritDoc} */
         public ArtifactVersion getOldestUpdate( VersionDetails versionDetails, ArtifactVersion currentVersion,
@@ -88,7 +89,7 @@ public abstract class UpdateScope
      *
      * @since 1.0-beta-1
      */
-    public static final UpdateScope INCREMENTAL = new UpdateScope( "INCREMENTAL", 1)
+    public static final UpdateScope INCREMENTAL = new UpdateScope( "INCREMENTAL", 1 )
     {
         /** {@inheritDoc} */
         public ArtifactVersion getOldestUpdate( VersionDetails versionDetails, ArtifactVersion currentVersion,
@@ -131,7 +132,7 @@ public abstract class UpdateScope
      *
      * @since 1.0-beta-1
      */
-    public static final UpdateScope MINOR = new UpdateScope( "MINOR", 2)
+    public static final UpdateScope MINOR = new UpdateScope( "MINOR", 2 )
     {
         /** {@inheritDoc} */
         public ArtifactVersion getOldestUpdate( VersionDetails versionDetails, ArtifactVersion currentVersion,
@@ -174,7 +175,7 @@ public abstract class UpdateScope
      *
      * @since 1.0-beta-1
      */
-    public static final UpdateScope MAJOR = new UpdateScope( "MAJOR", 3)
+    public static final UpdateScope MAJOR = new UpdateScope( "MAJOR", 3 )
     {
         /** {@inheritDoc} */
         public ArtifactVersion getOldestUpdate( VersionDetails versionDetails, ArtifactVersion currentVersion,
@@ -213,7 +214,7 @@ public abstract class UpdateScope
      *
      * @since 1.0-beta-1
      */
-    public static final UpdateScope ANY = new UpdateScope( "ANY", 4)
+    public static final UpdateScope ANY = new UpdateScope( "ANY", 4 )
     {
         /** {@inheritDoc} */
         public ArtifactVersion getOldestUpdate( VersionDetails versionDetails, ArtifactVersion currentVersion,
@@ -245,7 +246,6 @@ public abstract class UpdateScope
      * @param currentVersion The current version.
      * @param includeSnapshots Whether to include snapshots.
      * @return The next version within this scope or <code>null</code> if there is no version within this scope.
-     * @throws ArtifactMetadataRetrievalException if there was a problem retrieving the list of available versions.
      */
     public abstract ArtifactVersion getOldestUpdate( VersionDetails versionDetails, ArtifactVersion currentVersion,
                                                      boolean includeSnapshots );
@@ -280,10 +280,11 @@ public abstract class UpdateScope
 
     /**
      * Returns the name of this enum constant, exactly as declared in its enum declaration.
-     * <p/>
+     * <p>
      * <b>Most programmers should use the {@link #toString} method in preference to this one, as the toString method may
      * return a more user-friendly name.</b> This method is designed primarily for use in specialized situations where
      * correctness depends on getting the exact name, which will not vary from release to release.
+     * </p>
      *
      * @return the name of this enum constant
      */
@@ -295,16 +296,18 @@ public abstract class UpdateScope
     /**
      * The ordinal of this enumeration constant (its position in the enum declaration, where the initial constant is
      * assigned an ordinal of zero).
-     * <p/>
+     * <p>
      * Most programmers will have no use for this field.
+     * </p>
      */
     private final int ordinal;
 
     /**
      * Returns the ordinal of this enumeration constant (its position in its enum declaration, where the initial
      * constant is assigned an ordinal of zero).
-     * <p/>
+     * <p>
      * Most programmers will have no use for this method.
+     * </p>
      *
      * @return the ordinal of this enumeration constant
      */
@@ -365,9 +368,10 @@ public abstract class UpdateScope
     /**
      * Compares this enum with the specified object for order. Returns a negative integer, zero, or a positive integer
      * as this object is less than, equal to, or greater than the specified object.
-     * <p/>
+     * <p>
      * Enum constants are only comparable to other enum constants of the same enum type. The natural order implemented
      * by this method is the order in which the constants are declared.
+     * </p>
      */
     public final int compareTo( Object o )
     {

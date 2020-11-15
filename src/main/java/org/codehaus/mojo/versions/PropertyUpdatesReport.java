@@ -24,18 +24,20 @@ import java.util.Map;
 
 import org.apache.maven.doxia.sink.Sink;
 import org.apache.maven.plugin.MojoExecutionException;
+import org.apache.maven.plugins.annotations.Mojo;
+import org.apache.maven.plugins.annotations.Parameter;
+import org.apache.maven.plugins.annotations.ResolutionScope;
 import org.apache.maven.reporting.MavenReportException;
+import org.codehaus.mojo.versions.api.PropertyVersions;
 
 /**
  * Generates a report of available updates for properties of a project which are linked to the dependencies and/or
  * plugins of a project.
  *
  * @author Stephen Connolly
- * @goal property-updates-report
- * @requiresDependencyResolution runtime
- * @requiresProject true
  * @since 1.0-beta-1
  */
+@Mojo( name = "property-updates-report", requiresProject = true, requiresDependencyResolution = ResolutionScope.RUNTIME, threadSafe = true )
 public class PropertyUpdatesReport
     extends AbstractVersionsReport
 {
@@ -43,34 +45,34 @@ public class PropertyUpdatesReport
     /**
      * Any restrictions that apply to specific properties.
      *
-     * @parameter
      * @since 1.0-beta-1
      */
+    @Parameter
     private Property[] properties;
 
     /**
      * A comma separated list of properties to include in the report.
      *
-     * @parameter property="includeProperties"
      * @since 1.0-beta-1
      */
+    @Parameter( property = "includeProperties" )
     private String includeProperties = null;
 
     /**
      * A comma separated list of properties to not include in the report.
      *
-     * @parameter property="excludeProperties"
      * @since 1.0-beta-1
      */
+    @Parameter( property = "excludeProperties" )
     private String excludeProperties = null;
 
     /**
      * Whether properties linking versions should be auto-detected or not.
      *
-     * @parameter property="autoLinkItems" defaultValue="true"
      * @since 1.0-beta-1
      */
-    private Boolean autoLinkItems;
+    @Parameter( property = "autoLinkItems", defaultValue = "true" )
+    private boolean autoLinkItems;
 
     /**
      * {@inheritDoc}
@@ -96,12 +98,11 @@ public class PropertyUpdatesReport
     protected void doGenerateReport( Locale locale, Sink sink )
         throws MavenReportException
     {
-        final Map updateSet;
+        final Map<Property, PropertyVersions> updateSet;
         try
         {
-            updateSet =
-                getHelper().getVersionPropertiesMap( getProject(), properties, includeProperties, excludeProperties,
-                                                     !Boolean.FALSE.equals( autoLinkItems ) );
+            updateSet = getHelper().getVersionPropertiesMap( getProject(), properties, includeProperties,
+                                                             excludeProperties, autoLinkItems );
         }
         catch ( MojoExecutionException e )
         {

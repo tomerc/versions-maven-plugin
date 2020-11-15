@@ -25,6 +25,7 @@ import org.apache.maven.artifact.versioning.ArtifactVersion;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
+import org.apache.maven.plugins.annotations.Mojo;
 import org.codehaus.mojo.versions.api.ArtifactVersions;
 import org.codehaus.mojo.versions.api.PomHelper;
 import org.codehaus.mojo.versions.rewriting.ModifiedPomXMLEventReader;
@@ -39,11 +40,9 @@ import java.util.regex.Pattern;
  * Replaces any -SNAPSHOT versions with a release version, older if necessary (if there has been a release).
  *
  * @author Stephen Connolly
- * @goal force-releases
- * @requiresProject true
- * @requiresDirectInvocation true
  * @since 2.2
  */
+@Mojo( name = "force-releases", requiresProject = true, requiresDirectInvocation = true, threadSafe = true )
 public class ForceReleasesMojo
     extends AbstractVersionsDependencyUpdaterMojo
 {
@@ -73,7 +72,7 @@ public class ForceReleasesMojo
             {
                 useReleases( pom, getProject().getDependencyManagement().getDependencies() );
             }
-            if ( isProcessingDependencies() )
+            if ( getProject().getDependencies() != null && isProcessingDependencies() )
             {
                 useReleases( pom, getProject().getDependencies() );
             }
@@ -84,18 +83,20 @@ public class ForceReleasesMojo
         }
     }
 
-    private void useReleases( ModifiedPomXMLEventReader pom, Collection dependencies )
+    private void useReleases( ModifiedPomXMLEventReader pom, Collection<Dependency> dependencies )
         throws XMLStreamException, MojoExecutionException, ArtifactMetadataRetrievalException
     {
-        Iterator i = dependencies.iterator();
-
-        while ( i.hasNext() )
+        for ( Dependency dep : dependencies )
         {
-            Dependency dep = (Dependency) i.next();
-
             if ( isExcludeReactor() && isProducedByReactor( dep ) )
             {
                 getLog().info( "Ignoring reactor dependency: " + toString( dep ) );
+                continue;
+            }
+
+            if ( isHandledByProperty( dep ) )
+            {
+                getLog().debug( "Ignoring dependency with property as version: " + toString( dep ) );
                 continue;
             }
 
@@ -115,7 +116,7 @@ public class ForceReleasesMojo
                 if ( versions.containsVersion( releaseVersion ) )
                 {
                     if ( PomHelper.setDependencyVersion( pom, dep.getGroupId(), dep.getArtifactId(), version,
-                                                         releaseVersion ) )
+                                                         releaseVersion, getProject().getModel() ) )
                     {
                         getLog().info( "Updated " + toString( dep ) + " to version " + releaseVersion );
                     }
@@ -128,7 +129,7 @@ public class ForceReleasesMojo
                         getLog().info( "No release of " + toString( dep ) + " to force." );
                     }
                     else if ( PomHelper.setDependencyVersion( pom, dep.getGroupId(), dep.getArtifactId(), version,
-                                                              v[v.length - 1].toString() ) )
+                                                              v[v.length - 1].toString(), getProject().getModel() ) )
                     {
                         getLog().info( "Reverted " + toString( dep ) + " to version " + v[v.length - 1].toString() );
                     }

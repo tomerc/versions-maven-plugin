@@ -19,42 +19,43 @@ package org.codehaus.mojo.versions;
  * under the License.
  */
 
+import java.util.Collection;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import javax.xml.stream.XMLStreamException;
+
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.metadata.ArtifactMetadataRetrievalException;
 import org.apache.maven.artifact.versioning.ArtifactVersion;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
+import org.apache.maven.plugins.annotations.Mojo;
+import org.apache.maven.plugins.annotations.Parameter;
 import org.codehaus.mojo.versions.api.PomHelper;
 import org.codehaus.mojo.versions.api.PropertyVersions;
 import org.codehaus.mojo.versions.rewriting.ModifiedPomXMLEventReader;
-
-import javax.xml.stream.XMLStreamException;
-import java.util.Collection;
-import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * Attempts to resolve dependency version ranges to the specific version being used in the build. For example a version
  * range of "[1.0, 1.2)" would be resolved to the specific version currently in use "1.1".
  *
  * @author Paul Gier
- * @goal resolve-ranges
- * @requiresProject true
- * @requiresDirectInvocation true
  * @since 1.0-alpha-3
  */
+@Mojo( name = "resolve-ranges", requiresProject = true, requiresDirectInvocation = true, threadSafe = true )
 public class ResolveRangesMojo
     extends AbstractVersionsDependencyUpdaterMojo
 {
     /**
-     * Whether to process the properties section of the project. If not set will default to true.
+     * Whether to process the properties section of the project.
      *
-     * @parameter property="processProperties" defaultValue="true"
      * @since 1.3
      */
-    private Boolean processProperties;
+    @Parameter( property = "processProperties", defaultValue = "true" )
+    private boolean processProperties;
 
     /**
      * A comma separated list of properties to update if they contain version-ranges.
@@ -62,15 +63,40 @@ public class ResolveRangesMojo
      * @parameter property="includeProperties"
      * @since 1.3
      */
+    @Parameter( property = "includeProperties" )
     private String includeProperties = null;
 
     /**
      * A comma separated list of properties to not update even if they contain version-ranges.
      *
-     * @parameter property="excludeProperties"
      * @since 1.3
      */
+    @Parameter( property = "excludeProperties" )
     private String excludeProperties = null;
+
+    /**
+     * Whether to allow the major version number to be changed.
+     *
+     * @since 2.5
+     */
+    @Parameter( property = "allowMajorUpdates", defaultValue = "true" )
+    private boolean allowMajorUpdates;
+
+    /**
+     * Whether to allow the minor version number to be changed.
+     *
+     * @since 2.5
+     */
+    @Parameter( property = "allowMinorUpdates", defaultValue = "true" )
+    private boolean allowMinorUpdates;
+
+    /**
+     * Whether to allow the incremental version number to be changed.
+     *
+     * @since 2.5
+     */
+    @Parameter( property = "allowIncrementalUpdates", defaultValue = "true" )
+    private boolean allowIncrementalUpdates;
 
     // ------------------------------ FIELDS ------------------------------
 
@@ -80,18 +106,6 @@ public class ResolveRangesMojo
     public final Pattern matchRangeRegex = Pattern.compile( "," );
 
     // ------------------------------ METHODS --------------------------
-
-    /**
-     * Should the project/properties section of the pom be processed.
-     *
-     * @return returns <code>true if the project/properties section of the pom should be processed.
-     * @since 1.3
-     */
-    public boolean isProcessingProperties()
-    {
-        // true if true or null
-        return !Boolean.FALSE.equals( processProperties );
-    }
 
     /**
      * @param pom the pom to update.
@@ -105,20 +119,88 @@ public class ResolveRangesMojo
     {
         // Note we have to get the dependencies from the model because the dependencies in the
         // project may have already had their range resolved [MNG-4138]
-        if ( getProject().getModel().getDependencyManagement() != null
-            && getProject().getModel().getDependencyManagement().getDependencies() != null
+        if ( hasDependencyManagement() && hasDependenciesInDependencyManagement()
             && isProcessingDependencyManagement() )
         {
+            getLog().debug( "processing dependencyManagement of " + getProject().getId() );
             resolveRanges( pom, getProject().getModel().getDependencyManagement().getDependencies() );
         }
-        if ( isProcessingDependencies() )
+        if ( getProject().getDependencies() != null && isProcessingDependencies() )
         {
+            getLog().debug( "processing dependencies of " + getProject().getId() );
             resolveRanges( pom, getProject().getModel().getDependencies() );
         }
-        if ( isProcessingProperties() )
+        if ( hasParent() && isProcessingParent() )
         {
+            getLog().debug( "processing parent " + getProject().getId() );
+            resolveRangesInParent( pom );
+        }
+        if ( processProperties )
+        {
+            getLog().debug( "processing properties of " + getProject().getId() );
             resolvePropertyRanges( pom );
         }
+    }
+
+    private boolean hasParent()
+    {
+        return getProject().getModel().getParent() != null;
+    }
+
+    private boolean hasDependenciesInDependencyManagement()
+    {
+        return getProject().getModel().getDependencyManagement().getDependencies() != null;
+    }
+
+    private boolean hasDependencyManagement()
+    {
+        return getProject().getModel().getDependencyManagement() != null;
+    }
+
+    private void resolveRangesInParent( ModifiedPomXMLEventReader pom )
+        throws MojoExecutionException, ArtifactMetadataRetrievalException, XMLStreamException
+    {
+        Matcher versionMatcher = matchRangeRegex.matcher( getProject().getModel().getParent().getVersion() );
+
+        if ( versionMatcher.find() )
+        {
+            Artifact artifact = this.toArtifact( getProject().getModel().getParent() );
+
+            if ( artifact != null && isIncluded( artifact ) )
+            {
+                getLog().debug( "Resolving version range for parent: " + artifact );
+
+                String artifactVersion = artifact.getVersion();
+                if ( artifactVersion == null )
+                {
+                    ArtifactVersion latestVersion =
+                        findLatestVersion( artifact, artifact.getVersionRange(), allowSnapshots, false );
+
+                    if ( latestVersion != null )
+                    {
+                        artifactVersion = latestVersion.toString();
+                    }
+                    else
+                    {
+                        getLog().warn( "Not updating version " + artifact + " : could not resolve any versions" );
+                    }
+                }
+
+                if ( artifactVersion != null )
+                {
+                    if ( PomHelper.setProjectParentVersion( pom, artifactVersion ) )
+                    {
+                        getLog().debug( "Version set to " + artifactVersion + " for parent: " + artifact );
+                    }
+                    else
+                    {
+                        getLog().warn( "Could not find the version tag for parent " + artifact + " in project "
+                            + getProject().getId() + " so unable to set version to " + artifactVersion );
+                    }
+                }
+            }
+        }
+
     }
 
     private void resolveRanges( ModifiedPomXMLEventReader pom, Collection<Dependency> dependencies )
@@ -129,6 +211,12 @@ public class ResolveRangesMojo
         {
             if ( isExcludeReactor() && isProducedByReactor( dep ) )
             {
+                continue;
+            }
+
+            if ( isHandledByProperty( dep ) )
+            {
+                getLog().debug( "Ignoring dependency with property as version: " + toString( dep ) );
                 continue;
             }
 
@@ -146,7 +234,7 @@ public class ResolveRangesMojo
                     if ( artifactVersion == null )
                     {
                         ArtifactVersion latestVersion =
-                            findLatestVersion( artifact, artifact.getVersionRange(), null, false );
+                            findLatestVersion( artifact, artifact.getVersionRange(), allowSnapshots, false );
 
                         if ( latestVersion != null )
                         {
@@ -161,14 +249,15 @@ public class ResolveRangesMojo
                     if ( artifactVersion != null )
                     {
                         if ( PomHelper.setDependencyVersion( pom, artifact.getGroupId(), artifact.getArtifactId(),
-                                                             dep.getVersion(), artifactVersion ) )
+                                                             dep.getVersion(), artifactVersion,
+                                                             getProject().getModel() ) )
                         {
                             getLog().debug( "Version set to " + artifactVersion + " for dependency: " + artifact );
                         }
                         else
                         {
-                            getLog().warn( "Could not find the dependency " + artifact + " so unable to set version to "
-                                + artifactVersion );
+                            getLog().debug( "Could not find the version tag for dependency " + artifact + " in project "
+                                + getProject().getId() + " so unable to set version to " + artifactVersion );
                         }
                     }
                 }
@@ -194,7 +283,10 @@ public class ResolveRangesMojo
             }
 
             property.setVersion( currentVersion );
-            updatePropertyToNewestVersion( pom, property, version, currentVersion );
+
+            int segment = determineUnchangedSegment( allowMajorUpdates, allowMinorUpdates, allowIncrementalUpdates );
+            // TODO: Check if we could add allowDowngrade ? 
+            updatePropertyToNewestVersion( pom, property, version, currentVersion, false, segment );
 
         }
     }

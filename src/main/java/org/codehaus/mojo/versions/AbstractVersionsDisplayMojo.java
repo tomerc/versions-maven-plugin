@@ -19,13 +19,14 @@ package org.codehaus.mojo.versions;
  * under the License.
  */
 
-import org.apache.commons.lang.StringUtils;
-import org.codehaus.plexus.util.FileUtils;
-
 import java.io.File;
 import java.io.IOException;
 import java.util.LinkedHashSet;
 import java.util.Set;
+
+import org.apache.commons.lang3.StringUtils;
+import org.apache.maven.plugins.annotations.Parameter;
+import org.codehaus.plexus.util.FileUtils;
 
 /**
  * Abstract base class for the Display___ mojos.
@@ -38,25 +39,25 @@ public abstract class AbstractVersionsDisplayMojo
     /**
      * If specified then the display output will be sent to the specified file.
      *
-     * @parameter property="versions.outputFile"
      * @since 2.2
      */
+    @Parameter( property = "versions.outputFile" )
     private File outputFile;
 
     /**
      * Controls whether the display output is logged to the console.
      *
-     * @parameter property="versions.logOutput" default-value="true"
      * @since 2.2
      */
+    @Parameter( property = "versions.logOutput", defaultValue = "true" )
     private boolean logOutput;
 
     /**
      * The character encoding to use when writing to {@link #outputFile}.
      *
-     * @parameter property="outputEncoding" default-value="${project.reporting.outputEncoding}"
      * @since 2.2
      */
+    @Parameter( property = "outputEncoding", defaultValue = "${project.reporting.outputEncoding}" )
     private String outputEncoding;
 
     private boolean outputFileError = false;
@@ -80,11 +81,11 @@ public abstract class AbstractVersionsDisplayMojo
                 Set<String> files = (Set<String>) getPluginContext().get( key );
                 if ( files == null )
                 {
-                    files = new LinkedHashSet<String>();
+                    files = new LinkedHashSet<>();
                 }
                 else
                 {
-                    files = new LinkedHashSet<String>( files );
+                    files = new LinkedHashSet<>( files );
                 }
                 if ( !files.contains( outputFileName ) )
                 {

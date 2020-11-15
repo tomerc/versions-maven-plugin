@@ -19,19 +19,6 @@ package org.codehaus.mojo.versions;
  * under the License.
  */
 
-import org.apache.maven.artifact.Artifact;
-import org.apache.maven.model.Dependency;
-import org.apache.maven.plugin.MojoExecutionException;
-import org.apache.maven.plugin.MojoFailureException;
-import org.apache.maven.project.MavenProject;
-import org.apache.maven.project.MavenProjectBuilder;
-import org.apache.maven.project.ProjectBuildingException;
-import org.codehaus.mojo.versions.api.ArtifactAssociation;
-import org.codehaus.mojo.versions.api.PomHelper;
-import org.codehaus.mojo.versions.api.PropertyVersions;
-import org.codehaus.mojo.versions.rewriting.ModifiedPomXMLEventReader;
-
-import javax.xml.stream.XMLStreamException;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
@@ -41,16 +28,31 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import javax.xml.stream.XMLStreamException;
+
+import org.apache.maven.artifact.Artifact;
+import org.apache.maven.model.Dependency;
+import org.apache.maven.plugin.MojoExecutionException;
+import org.apache.maven.plugin.MojoFailureException;
+import org.apache.maven.plugins.annotations.Component;
+import org.apache.maven.plugins.annotations.Mojo;
+import org.apache.maven.plugins.annotations.Parameter;
+import org.apache.maven.project.MavenProject;
+import org.apache.maven.project.MavenProjectBuilder;
+import org.apache.maven.project.ProjectBuildingException;
+import org.codehaus.mojo.versions.api.ArtifactAssociation;
+import org.codehaus.mojo.versions.api.PomHelper;
+import org.codehaus.mojo.versions.api.PropertyVersions;
+import org.codehaus.mojo.versions.rewriting.ModifiedPomXMLEventReader;
+
 /**
  * Compare dependency versions of the current project to dependencies or dependency management of a remote repository
  * project. Can optionally update locally the project instead of reporting the comparison
  *
  * @author Paul Gier
- * @goal compare-dependencies
- * @requiresProject true
- * @requiresDirectInvocation true
  * @since 1.3
  */
+@Mojo( name = "compare-dependencies", requiresProject = true, requiresDirectInvocation = true, threadSafe = true )
 public class CompareDependenciesMojo
     extends AbstractVersionsDependencyUpdaterMojo
 {
@@ -65,60 +67,51 @@ public class CompareDependenciesMojo
     /**
      * The groupId, artifactId, and version of the remote project (POM) to which we are comparing. This should be in the
      * form "groupId:artifactId:version"
-     *
-     * @parameter property="remotePom"
-     * @required true
      */
+    @Parameter( property = "remotePom", required = true )
     protected String remotePom;
 
     /**
      * Ignore the list of remote dependencies and only compare the remote dependencyManagement
-     *
-     * @parameter property="ignoreRemoteDependencies" default-value="false"
      */
+    @Parameter( property = "ignoreRemoteDependencies", defaultValue = "false" )
     protected boolean ignoreRemoteDependencies;
 
     /**
      * Ignore the remote dependency management and only check against the actual dependencies of the remote project
-     *
-     * @parameter property="ignoreRemoteDependencyManagement" default-value="false"
      */
+    @Parameter( property = "ignoreRemoteDependencyManagement", defaultValue = "false" )
     protected boolean ignoreRemoteDependencyManagement;
 
     /**
      * Update dependency versions in the current POM.
-     *
-     * @parameter property="updateDependencies" default-value="false"
      */
+    @Parameter( property = "updateDependencies", defaultValue = "false" )
     protected boolean updateDependencies;
 
     /**
      * Update dependency versions stored in properties
-     *
-     * @parameter property="updatePropertyVersions" default-value="false"
      */
+    @Parameter( property = "updatePropertyVersions", defaultValue = "false" )
     protected boolean updatePropertyVersions;
 
     /**
      * Display the dependency version differences on the command line, but do not update the versions in the current
      * pom. If updateDependencies is set to "true" this will automatically be set to false.
-     *
-     * @parameter property="reportMode" default-value="true"
      */
+    @Parameter( property = "reportMode", defaultValue = "true" )
     protected boolean reportMode;
 
     /**
      * If the output file is set, the diff report will be written to this file.
-     *
-     * @parameter property="reportOutputFile"
      */
+    @Parameter( property = "reportOutputFile" )
     protected File reportOutputFile;
 
     /**
      * The project builder used to initialize the remote project.
-     *
-     * @component
      */
+    @Component
     protected MavenProjectBuilder mavenProjectBuilder;
 
     // ------------------------------ METHODS --------------------------
@@ -191,7 +184,7 @@ public class CompareDependenciesMojo
                 compareVersions( pom, getProject().getDependencyManagement().getDependencies(), remoteDepsMap );
             totalDiffs.addAll( depManDiffs );
         }
-        if ( isProcessingDependencies() )
+        if ( getProject().getDependencies() != null && isProcessingDependencies() )
         {
             List<String> depDiffs = compareVersions( pom, getProject().getDependencies(), remoteDepsMap );
             totalDiffs.addAll( depDiffs );
@@ -246,9 +239,9 @@ public class CompareDependenciesMojo
      */
     private List<String> compareVersions( ModifiedPomXMLEventReader pom, List<Dependency> dependencies,
                                           Map<String, Dependency> remoteDependencies )
-                                              throws MojoExecutionException, XMLStreamException
+        throws MojoExecutionException, XMLStreamException
     {
-        List<String> updates = new ArrayList<String>();
+        List<String> updates = new ArrayList<>();
         for ( Dependency dep : dependencies )
         {
             Artifact artifact = this.toArtifact( dep );
@@ -269,7 +262,8 @@ public class CompareDependenciesMojo
                     if ( !reportMode )
                     {
                         if ( PomHelper.setDependencyVersion( pom, dep.getGroupId(), dep.getArtifactId(),
-                                                             dep.getVersion(), remoteVersion ) )
+                                                             dep.getVersion(), remoteVersion,
+                                                             getProject().getModel() ) )
                         {
                             getLog().info( "Updated " + toString( dep ) + " to version " + remoteVersion );
                         }
@@ -290,9 +284,9 @@ public class CompareDependenciesMojo
     private List<String> updatePropertyVersions( ModifiedPomXMLEventReader pom,
                                                  Map<Property, PropertyVersions> versionProperties,
                                                  Map<String, Dependency> remoteDependencies )
-                                                     throws XMLStreamException
+        throws XMLStreamException
     {
-        List<String> result = new ArrayList<String>();
+        List<String> result = new ArrayList<>();
         for ( Map.Entry<Property, PropertyVersions> entry : versionProperties.entrySet() )
         {
             Property property = entry.getKey();
@@ -366,12 +360,9 @@ public class CompareDependenciesMojo
             reportOutputFile.getParentFile().mkdirs();
         }
 
-        FileWriter fw = null;
-        PrintWriter pw = null;
-        try
+        try( FileWriter fw = new FileWriter( reportOutputFile ); //
+            PrintWriter pw = new PrintWriter( fw ) )
         {
-            fw = new FileWriter( reportOutputFile );
-            pw = new PrintWriter( fw );
             pw.println( "The following differences were found:" );
             pw.println();
             if ( dependenciesUpdate.size() == 0 )
@@ -399,32 +390,11 @@ public class CompareDependenciesMojo
                     pw.println( "  " + propertyUpdate );
                 }
             }
-            pw.close();
-            fw.close();
         }
         catch ( IOException e )
         {
             throw new MojoExecutionException( "Unable to write report file. ", e );
         }
-        finally
-        {
-            if ( pw != null )
-            {
-                pw.close();
-            }
-            if ( fw != null )
-            {
-                try
-                {
-                    fw.close();
-                }
-                catch ( IOException io )
-                {
-                    // Ignore
-                }
-            }
-        }
-
     }
 
     /**

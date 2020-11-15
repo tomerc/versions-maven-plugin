@@ -23,12 +23,13 @@ import java.util.Collection;
 
 import javax.xml.stream.XMLStreamException;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.metadata.ArtifactMetadataRetrievalException;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
+import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.project.MavenProject;
 import org.codehaus.mojo.versions.api.PomHelper;
 import org.codehaus.mojo.versions.rewriting.ModifiedPomXMLEventReader;
@@ -37,11 +38,9 @@ import org.codehaus.mojo.versions.rewriting.ModifiedPomXMLEventReader;
  * Replaces any versions with the corresponding version from the reactor.
  *
  * @author Stephen Connolly
- * @goal use-reactor
- * @requiresProject true
- * @requiresDirectInvocation true
  * @since 2.2
  */
+@Mojo( name = "use-reactor", requiresProject = true, requiresDirectInvocation = true, threadSafe = true )
 public class UseReactorMojo
     extends AbstractVersionsDependencyUpdaterMojo
 {
@@ -60,11 +59,14 @@ public class UseReactorMojo
     {
         try
         {
+            if ( isProcessingParent() && getProject().hasParent() ) {
+                useReactor( pom, getProject().getParent() );
+            }
             if ( getProject().getDependencyManagement() != null && isProcessingDependencyManagement() )
             {
                 useReactor( pom, getProject().getDependencyManagement().getDependencies() );
             }
-            if ( isProcessingDependencies() )
+            if ( getProject().getDependencies() != null && isProcessingDependencies() )
             {
                 useReactor( pom, getProject().getDependencies() );
             }
@@ -79,10 +81,8 @@ public class UseReactorMojo
         throws XMLStreamException, MojoExecutionException, ArtifactMetadataRetrievalException
     {
 
-        for ( Object dependency : dependencies )
+        for ( Dependency dep : dependencies )
         {
-            Dependency dep = (Dependency) dependency;
-
             Artifact artifact = this.toArtifact( dep );
             if ( !isIncluded( artifact ) )
             {
@@ -97,13 +97,32 @@ public class UseReactorMojo
                     && !StringUtils.equals( project.getVersion(), dep.getVersion() ) )
                 {
                     if ( PomHelper.setDependencyVersion( pom, dep.getGroupId(), dep.getArtifactId(), dep.getVersion(),
-                                                         project.getVersion() ) )
+                                                         project.getVersion(), getProject().getModel() ) )
                     {
                         getLog().info( "Updated " + toString( dep ) + " to version " + project.getVersion() );
                     }
                     break;
                 }
             }
+        }
+    }
+
+    private void useReactor( ModifiedPomXMLEventReader pom, MavenProject parent )
+            throws XMLStreamException, MojoExecutionException, ArtifactMetadataRetrievalException
+    {
+        for ( Object reactorProject : reactorProjects )
+        {
+            MavenProject project = (MavenProject) reactorProject;
+            if ( StringUtils.equals( project.getGroupId(), parent.getGroupId() )
+                    && StringUtils.equals( project.getArtifactId(), parent.getArtifactId() )
+                    && !StringUtils.equals( project.getVersion(), parent.getVersion() ) )
+            {
+                if ( PomHelper.setProjectParentVersion( pom, project.getVersion() ) )
+                {
+                    getLog().info( "Updated parent " + toString( parent ) + " to version " + project.getVersion() );
+                }
+            }
+
         }
     }
 
